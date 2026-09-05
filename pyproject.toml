@@ -1,0 +1,18 @@
+[project]
+name = "PySide Project"
+
+[tool.pyside6-project]
+files = [
+    "main.py",
+    "widget.py",
+    "tasks.py",
+    "data_store.py",
+    "camera.py",
+    "style.qss",
+    "screens/start_screen.py",
+    "screens/task_info_screen.py",
+    "screens/task_capture_screen.py",
+    "screens/name_entry_screen.py",
+    "screens/grade_screen.py",
+    "screens/data_log_screen.py",
+]

@@ -1,0 +1,172 @@
+/* Global kiosk stylesheet - tokens sourced from the shadcn/ui design system
+   used by the approved Camera Trainer Kiosk design (slate neutral ramp,
+   6px radius everywhere, 4/8/12/16/24/32/64px spacing scale). */
+
+QWidget {
+    background: #ffffff;
+    font-family: "Inter";
+    color: #0f172a;
+    font-size: 14px;
+}
+
+QLabel {
+    background: transparent;
+}
+
+QPushButton#primary {
+    background: #0f172a;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 500;
+    min-height: 44px;
+}
+QPushButton#primary:hover {
+    background: #1e293b;
+}
+QPushButton#primary:disabled {
+    background: #94a3b8;
+}
+
+QPushButton#outline {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 500;
+    min-height: 44px;
+}
+QPushButton#outline:hover {
+    background: #f1f5f9;
+}
+
+QPushButton#stepperBtn {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 44px;
+    max-height: 44px;
+}
+QPushButton#stepperBtn:hover {
+    background: #f1f5f9;
+}
+QPushButton#stepperBtn:disabled {
+    color: #cbd5e1;
+}
+
+QLabel#stepperValue {
+    background: #f1f5f9;
+    border-radius: 6px;
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    padding: 10px 0;
+}
+
+QLineEdit {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 16px;
+    color: #0f172a;
+}
+QLineEdit:focus {
+    border: 1px solid #64748b;
+}
+
+QLabel#readout {
+    background: #0f172a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+QLabel#eyebrow {
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #64748b;
+}
+
+QLabel#gradeBadge {
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 8px;
+    font-size: 34px;
+    font-weight: 800;
+    qproperty-alignment: AlignCenter;
+}
+
+QFrame#tableHeader {
+    background: #f1f5f9;
+}
+
+QFrame#tableWrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+QFrame#tableRow {
+    border-top: 1px solid #e2e8f0;
+}
+
+QFrame#studentRow:hover {
+    background: #f1f5f9;
+}
+
+QLabel#miniGrade {
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 15px;
+    qproperty-alignment: AlignCenter;
+}
+
+QLabel#bannerCorrect {
+    background: #f0fdf4;
+    color: #15803d;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+QLabel#bannerIncorrect {
+    background: #fdf2f2;
+    color: #b91c1c;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+QLabel#nameError {
+    color: #b91c1c;
+    font-size: 13px;
+}
+
+QListWidget {
+    border: none;
+    outline: none;
+}
+QListWidget::item {
+    border-bottom: 1px solid #e2e8f0;
+}
+QListWidget::item:selected {
+    background: #f1f5f9;
+    color: #0f172a;
+}

@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data_log.json
+.qtcreator/Python_3_14_64_bit_venv/
