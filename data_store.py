@@ -1,9 +1,15 @@
-"""JSON-backed persistence for completed training session records."""
+"""SQLite-backed persistence for completed training session records.
+
+The proposal (Ch. 3.9, "List of Equipment, Materials, and Software") specifies SQLite
+as the on-device database for storing student records, scores, feedback, and task
+results on the Raspberry Pi, without requiring internet connectivity.
+"""
 
 import json
+import sqlite3
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parent / "data_log.json"
+DEFAULT_PATH = Path(__file__).resolve().parent / "data_log.db"
 
 SEED_STUDENTS = [
     {
@@ -32,25 +38,64 @@ SEED_STUDENTS = [
     },
 ]
 
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    section TEXT NOT NULL,
+    grade TEXT NOT NULL,
+    total_retries INTEGER NOT NULL,
+    tasks_json TEXT NOT NULL
+);
+"""
+
 
 class DataStore:
-    """Loads/persists student session records to a JSON file next to the app."""
+    """Loads/persists student session records to a SQLite database next to the app."""
 
     def __init__(self, path: Path = DEFAULT_PATH):
         self.path = Path(path)
-        self.students = self._load()
+        is_new = not self.path.exists()
+        self._conn = sqlite3.connect(self.path)
+        self._conn.execute(_SCHEMA)
+        self._conn.commit()
+        if is_new:
+            for student in SEED_STUDENTS:
+                self._insert(student)
+        self.students = self._load_all()
 
-    def _load(self):
-        if not self.path.exists():
-            self._write(SEED_STUDENTS)
-            return [dict(s) for s in SEED_STUDENTS]
-        with open(self.path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    def _row_to_record(self, row) -> dict:
+        _id, name, section, grade, total_retries, tasks_json = row
+        return {
+            "name": name,
+            "section": section,
+            "grade": grade,
+            "totalRetries": total_retries,
+            "tasks": json.loads(tasks_json),
+        }
 
-    def _write(self, students):
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(students, f, indent=2)
+    def _load_all(self):
+        cursor = self._conn.execute(
+            "SELECT id, name, section, grade, total_retries, tasks_json FROM students ORDER BY id"
+        )
+        return [self._row_to_record(row) for row in cursor.fetchall()]
+
+    def _insert(self, record: dict):
+        self._conn.execute(
+            "INSERT INTO students (name, section, grade, total_retries, tasks_json) VALUES (?, ?, ?, ?, ?)",
+            (
+                record["name"],
+                record["section"],
+                record["grade"],
+                record["totalRetries"],
+                json.dumps(record["tasks"]),
+            ),
+        )
+        self._conn.commit()
 
     def add_record(self, record: dict):
+        self._insert(record)
         self.students.append(record)
-        self._write(self.students)
+
+    def close(self):
+        self._conn.close()

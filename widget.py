@@ -1,6 +1,10 @@
 # This Python file uses the following encoding: utf-8
+import os
+
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
+from camera import CameraSession, frame_to_qpixmap
 from data_store import DataStore
 from screens.data_log_screen import DataLogScreen
 from screens.grade_screen import GradeScreen
@@ -8,7 +12,9 @@ from screens.name_entry_screen import NameEntryScreen
 from screens.start_screen import StartScreen
 from screens.task_capture_screen import TaskCaptureScreen
 from screens.task_info_screen import TaskInfoScreen
-from tasks import TASKS, compute_grade, fresh_task_state
+from tasks import TASKS, compute_grade, fresh_task_state, set_hardware_mode
+
+CAMERA_POLL_INTERVAL_MS = 400
 
 SCREEN_INDEX = {
     "start": 0,
@@ -23,10 +29,23 @@ SCREEN_INDEX = {
 class Widget(QWidget):
     """Kiosk shell: owns app state, TASKS flow, and QStackedWidget navigation."""
 
-    def __init__(self, parent=None, data_store: DataStore | None = None):
+    def __init__(self, parent=None, data_store: DataStore | None = None, camera_session: CameraSession | None = None):
         super().__init__(parent)
 
         self.data_store = data_store or DataStore()
+
+        # Real hardware integration (Ch. 3.6.3 of the proposal): gPhoto2 reads the
+        # Nikon D3500's live settings over USB, OpenCV analyzes the HDMI capture
+        # card's video feed. Falls back to the existing on-screen stepper +
+        # simulated overlay when no camera/capture card is attached.
+        # The HDMI capture card's video device index varies by Pi (e.g. /dev/video1
+        # instead of /dev/video0 if another video device is present) — override with
+        # the CAMERA_VIDEO_INDEX env var rather than editing code.
+        video_index = int(os.environ.get("CAMERA_VIDEO_INDEX", "0"))
+        self.camera_session = camera_session or CameraSession(video_index=video_index)
+        self.camera_session.connect()
+        set_hardware_mode(self.camera_session.hardware_available)
+
         self.state = {
             "screen": "start",
             "taskIdx": 0,
@@ -62,7 +81,44 @@ class Widget(QWidget):
         ):
             self.stacked.addWidget(screen)
 
+        self._camera_timer = QTimer(self)
+        self._camera_timer.timeout.connect(self._poll_camera)
+        self._camera_timer.start(CAMERA_POLL_INTERVAL_MS)
+
         self.render()
+
+    def closeEvent(self, event):
+        self._camera_timer.stop()
+        self.camera_session.close()
+        self.data_store.close()
+        super().closeEvent(event)
+
+    def _poll_camera(self):
+        """Live hardware polling while on the Task Capture screen: feeds real
+        frames into the (unchanged) preview widget and keeps the on-screen
+        readout tracking the physical camera dial, per Ch. 3.6.3 of the proposal."""
+        if self.state["screen"] != "taskCapture":
+            return
+
+        frame = self.camera_session.read_frame()
+        if frame is not None:
+            self.task_capture_screen.preview.set_frame(frame_to_qpixmap(frame))
+
+        if not self.camera_session.hardware_available:
+            return
+
+        idx = self.state["taskIdx"]
+        task = TASKS[idx]
+        live_value = self.camera_session.read_current_value(task["id"])
+        cur = self.state["taskState"][idx]
+        if live_value is not None and live_value != cur["value"]:
+            self.state["taskState"][idx] = {
+                **cur,
+                "value": live_value,
+                "checked": False,
+                "correct": False,
+            }
+            self.render()
 
     # -- navigation / state transitions (mirrors the approved design's Component logic) --
 
@@ -124,14 +180,21 @@ class Widget(QWidget):
         task = TASKS[idx]
         cur = self.state["taskState"][idx]
         if not cur["baseline"]:
+            self.camera_session.capture_baseline(task["id"])
             self.state["taskState"][idx] = {**cur, "baseline": True}
         else:
+            # Per Ch. 3.6.3: the system compares both the setting direction (checked
+            # against the target above) and the resulting image effect. The measured
+            # visual trend is recorded for internal fidelity even though correctness
+            # itself is still whether the reported/simulated setting hit the target.
+            trend = self.camera_session.frame_trend(task["id"])
             correct = cur["value"] == task["target"]
             self.state["taskState"][idx] = {
                 **cur,
                 "checked": True,
                 "correct": correct,
                 "retries": cur["retries"] if correct else cur["retries"] + 1,
+                "trend": trend,
             }
         self.render()
 

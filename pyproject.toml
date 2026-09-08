@@ -8,6 +8,8 @@ files = [
     "tasks.py",
     "data_store.py",
     "camera.py",
+    "gphoto_camera.py",
+    "vision.py",
     "style.qss",
     "screens/start_screen.py",
     "screens/task_info_screen.py",

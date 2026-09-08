@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data_log.json
+data_log.db
+data_log.smoketest.*
 .qtcreator/Python_3_14_64_bit_venv/

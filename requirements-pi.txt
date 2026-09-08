@@ -1,0 +1,18 @@
+# For the deployed Raspberry Pi rig only. Two things differ from a dev-machine install:
+#
+# 1. `python-gphoto2` needs the native `libgphoto2` C library, which is a Linux-only
+#    dependency (`sudo apt install libgphoto2-dev` on Raspberry Pi OS) and will not
+#    build on Windows/macOS dev machines. Without it, the app runs fine in simulated
+#    mode (see README).
+#
+# 2. PySide6 is pinned to 6.7.3 here (overriding requirements.txt's unpinned entry).
+#    PySide6 >=6.8 ships Linux aarch64 wheels requiring glibc >= 2.39, but Raspberry
+#    Pi OS Bookworm (current stable, as of writing) only has glibc 2.36 — pip would
+#    find no installable wheel and fall back to compiling PySide6 from source, which
+#    routinely runs out of RAM / takes hours on a Pi 4. 6.7.3's aarch64 wheel only
+#    needs glibc >= 2.31, and it supports Python 3.9-3.12 (Bookworm ships Python 3.11
+#    by default). If a future Raspberry Pi OS release ships glibc >= 2.39, this pin
+#    can be dropped.
+-r requirements.txt
+PySide6==6.7.3
+gphoto2

@@ -78,6 +78,24 @@ GRADE_LABEL = {
     "D": "Keep Practicing!",
 }
 
+# Set by the controller layer (widget.py) once a real camera is connected. When True,
+# compute_overlay() goes neutral: a real captured frame already shows the true
+# exposure, so the simulated dark/bright/grain/tint/blur overlay (designed for the
+# no-hardware placeholder preview) must not be layered on top of it.
+_hardware_mode = False
+
+
+def set_hardware_mode(enabled: bool) -> None:
+    global _hardware_mode
+    _hardware_mode = enabled
+
+
+def is_hardware_mode() -> bool:
+    return _hardware_mode
+
+
+NEUTRAL_OVERLAY = {"dark": 0.0, "bright": 0.0, "grain": 0.0, "tint": 0.0, "blur": 0.0}
+
 
 def compute_grade(total: int) -> str:
     if total <= 6:
@@ -130,8 +148,13 @@ def compute_overlay(task: dict, value) -> dict:
     """Simulated exposure overlay for the live-preview placeholder.
 
     Returns dark/bright/grain/tint opacities in [0, 1] and a blur radius in px,
-    matching the design prototype's computeOverlay().
+    matching the design prototype's computeOverlay(). Returns a neutral (all-zero)
+    overlay when a real camera is connected (see set_hardware_mode) since a real
+    captured frame already reflects the true exposure.
     """
+    if _hardware_mode:
+        return dict(NEUTRAL_OVERLAY)
+
     options = task["options"]
     idx = options.index(value)
     target_idx = options.index(task["target"])
