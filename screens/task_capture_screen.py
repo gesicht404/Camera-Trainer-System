@@ -8,14 +8,16 @@ from PySide6.QtWidgets import (
 )
 
 from camera import PreviewPanel
-from tasks import DEFAULTS, TASKS, compute_overlay, correct_message, incorrect_message
+from tasks import DEFAULTS, TASKS, correct_message, incorrect_message
 
 ACTIVE_COLOR = "#ffffff"
 MUTED_COLOR = "#94a3b8"
 
 
 class TaskCaptureScreen(QWidget):
-    """SCREEN: TASK CAPTURE - live preview + stepper controls, re-populated per task."""
+    """SCREEN: TASK CAPTURE - live preview + live-detected camera setting, re-populated
+    per task. The current value is read from the physical camera over gPhoto2 (no
+    on-screen +/- controls) - the trainee turns the actual camera dial."""
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -47,25 +49,22 @@ class TaskCaptureScreen(QWidget):
         self.readout.setObjectName("readout")
         controls.addWidget(self.readout)
 
-        stepper_row = QHBoxLayout()
-        stepper_row.setSpacing(10)
-        self.minus_btn = QPushButton("−")
-        self.minus_btn.setObjectName("stepperBtn")
-        self.minus_btn.setCursor(Qt.PointingHandCursor)
-        self.minus_btn.clicked.connect(lambda: self.controller.adjust_stepper(-1))
-        stepper_row.addWidget(self.minus_btn)
+        detected_box = QVBoxLayout()
+        detected_box.setSpacing(6)
+        self.camera_status = QLabel()
+        self.camera_status.setStyleSheet("font-size:12px; font-weight:600;")
+        detected_box.addWidget(self.camera_status)
 
-        self.stepper_value = QLabel()
-        self.stepper_value.setObjectName("stepperValue")
-        self.stepper_value.setAlignment(Qt.AlignCenter)
-        stepper_row.addWidget(self.stepper_value, stretch=1)
+        self.detected_value = QLabel()
+        self.detected_value.setObjectName("detectedValue")
+        self.detected_value.setAlignment(Qt.AlignCenter)
+        detected_box.addWidget(self.detected_value)
 
-        self.plus_btn = QPushButton("+")
-        self.plus_btn.setObjectName("stepperBtn")
-        self.plus_btn.setCursor(Qt.PointingHandCursor)
-        self.plus_btn.clicked.connect(lambda: self.controller.adjust_stepper(1))
-        stepper_row.addWidget(self.plus_btn)
-        controls.addLayout(stepper_row)
+        self.detected_hint = QLabel()
+        self.detected_hint.setWordWrap(True)
+        self.detected_hint.setStyleSheet("font-size:12px; color:#94a3b8;")
+        detected_box.addWidget(self.detected_hint)
+        controls.addLayout(detected_box)
 
         check_row = QHBoxLayout()
         self.check_btn = QPushButton()
@@ -125,15 +124,19 @@ class TaskCaptureScreen(QWidget):
             f'<span style="color:{color_for("wb")}">WB {wb_val}</span>'
         )
 
-        self.stepper_value.setText(task["format"](cur["value"]))
-        self.minus_btn.setEnabled(opt_idx > 0)
-        self.plus_btn.setEnabled(opt_idx < len(options) - 1)
+        if self.controller.camera_session.hardware_available:
+            self.camera_status.setText("● Camera connected")
+            self.camera_status.setStyleSheet("font-size:12px; font-weight:600; color:#15803d;")
+            self.detected_value.setText(task["format"](cur["value"]))
+            self.detected_hint.setText("Turn the camera's dial to change this setting.")
+        else:
+            self.camera_status.setText("● No camera detected")
+            self.camera_status.setStyleSheet("font-size:12px; font-weight:600; color:#b91c1c;")
+            self.detected_value.setText("—")
+            self.detected_hint.setText("Connect the Nikon D3500 (gPhoto2) to detect its live settings.")
 
         self.check_btn.setText("Check Adjustment" if cur["baseline"] else "Capture Baseline")
         self.retries_label.setText(f"Retries: {cur['retries']}")
-
-        overlay = compute_overlay(task, cur["value"])
-        self.preview.apply_overlay(overlay)
 
         if not cur["checked"]:
             self.banner.hide()

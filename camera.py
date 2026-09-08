@@ -1,27 +1,22 @@
 """Live camera preview widget.
 
-This is the real-hardware integration point: swap `PreviewPanel._base_pixmap()`
-for a frame pulled from `picamera2` / `gphoto2` / OpenCV, and call
-`set_frame(QPixmap)` whenever a new frame is captured. Until real hardware is
-wired up, it shows a placeholder and simulates exposure by darkening/
-brightening/tinting/blurring the placeholder proportional to how far the
-trainee's stepper value is from the correct setting (see tasks.compute_overlay).
+Displays real frames from the Nikon D3500's HDMI capture card (fed via
+`set_frame(QPixmap)` - see `CameraSession` below) or a placeholder when no
+camera is connected. There is no simulated exposure effect: the trainee turns
+the physical camera dial and the system detects the real result.
 """
 
-import random
-
-import cv2
 import numpy as np
+import cv2
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsOpacityEffect, QLabel, QWidget
+from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtWidgets import QLabel, QWidget
 
 from gphoto_camera import GPhotoCamera
 from vision import analyze_frame, describe_trend
 
 PLACEHOLDER_BG = QColor("#0f172a")
 PLACEHOLDER_FG = QColor("#e2e8f0")
-TINT_COLOR = QColor("#ff8c28")
 
 
 class PreviewPanel(QWidget):
@@ -36,31 +31,6 @@ class PreviewPanel(QWidget):
         self.base = QLabel("Live viewfinder\npreview", self)
         self.base.setAlignment(Qt.AlignCenter)
         self.base.setStyleSheet(f"color:{PLACEHOLDER_FG.name()}; background:transparent; font-size:13px;")
-        self._blur_effect = QGraphicsBlurEffect(self.base)
-        self._blur_effect.setBlurRadius(0)
-        self.base.setGraphicsEffect(self._blur_effect)
-
-        self.dark_overlay = QWidget(self)
-        self.dark_overlay.setAttribute(Qt.WA_StyledBackground, True)
-        self.dark_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.dark_overlay.setStyleSheet("background: rgba(0,0,0,0);")
-
-        self.bright_overlay = QWidget(self)
-        self.bright_overlay.setAttribute(Qt.WA_StyledBackground, True)
-        self.bright_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.bright_overlay.setStyleSheet("background: rgba(255,255,255,0);")
-
-        self.tint_overlay = QWidget(self)
-        self.tint_overlay.setAttribute(Qt.WA_StyledBackground, True)
-        self.tint_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.tint_overlay.setStyleSheet("background: rgba(255,140,40,0);")
-
-        self.grain_overlay = QLabel(self)
-        self.grain_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self._grain_opacity = QGraphicsOpacityEffect(self.grain_overlay)
-        self._grain_opacity.setOpacity(0)
-        self.grain_overlay.setGraphicsEffect(self._grain_opacity)
-        self._grain_pixmap_size = None
 
         self.live_chip = QWidget(self)
         self.live_chip.setAttribute(Qt.WA_StyledBackground, True)
@@ -81,46 +51,9 @@ class PreviewPanel(QWidget):
         self._frame = pixmap
         self.base.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
 
-    def apply_overlay(self, overlay: dict):
-        dark = overlay.get("dark", 0.0)
-        bright = overlay.get("bright", 0.0)
-        grain = overlay.get("grain", 0.0)
-        tint = overlay.get("tint", 0.0)
-        blur = overlay.get("blur", 0.0)
-
-        self.dark_overlay.setStyleSheet(f"background: rgba(0,0,0,{dark});")
-        self.bright_overlay.setStyleSheet(f"background: rgba(255,255,255,{bright});")
-        self.tint_overlay.setStyleSheet(
-            f"background: rgba({TINT_COLOR.red()},{TINT_COLOR.green()},{TINT_COLOR.blue()},{tint});"
-        )
-        self._grain_opacity.setOpacity(grain)
-        self._blur_effect.setBlurRadius(blur)
-
-    def _regen_grain_pixmap(self):
-        size = self.size()
-        if size.isEmpty() or size == self._grain_pixmap_size:
-            return
-        self._grain_pixmap_size = size
-        pixmap = QPixmap(size)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        rng = random.Random(0)
-        dot_count = (size.width() * size.height()) // 12
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 140))
-        for _ in range(dot_count):
-            x = rng.randrange(0, max(size.width(), 1))
-            y = rng.randrange(0, max(size.height(), 1))
-            painter.drawRect(x, y, 1, 1)
-        painter.end()
-        self.grain_overlay.setPixmap(pixmap)
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        rect = self.rect()
-        for widget in (self.base, self.dark_overlay, self.bright_overlay, self.tint_overlay, self.grain_overlay):
-            widget.setGeometry(rect)
-        self._regen_grain_pixmap()
+        self.base.setGeometry(self.rect())
         if self._frame is not None:
             self.set_frame(self._frame)
         self.live_chip.raise_()
@@ -138,9 +71,10 @@ class CameraSession:
     """Non-UI hardware controller: reads live exposure settings via gPhoto2 and
     analyzes live frames via OpenCV, per the proposal's system flowchart (Ch. 3.6.3).
 
-    Falls back gracefully when no Nikon D3500 / HDMI capture card is attached (e.g.
-    during development): `hardware_available` is False and callers should keep using
-    the existing on-screen stepper + simulated overlay (tasks.compute_overlay) instead.
+    `hardware_available` is False when no Nikon D3500 is connected (e.g. during
+    development) - the app has no on-screen fallback for adjusting settings in that
+    case, since the trainee is expected to turn the physical camera dial and the
+    system detects the result.
     """
 
     def __init__(self, gphoto_camera=None, video_capture_factory=None, video_index: int = 0):
@@ -182,8 +116,8 @@ class CameraSession:
         return True
 
     def read_current_value(self, task_id: str):
-        """Live camera-reported value for a task's setting, or None if unavailable
-        (caller should keep using the locally tracked/simulated value in that case)."""
+        """Live camera-reported value for a task's setting, or None if no camera
+        is connected."""
         if not self.settings_available:
             return None
         return self._gphoto.read_settings().get(task_id)

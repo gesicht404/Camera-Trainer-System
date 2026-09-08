@@ -1,18 +1,20 @@
 # Interactive Camera Trainer
 
-A touchscreen kiosk app built with PySide6 (Qt for Python) that teaches students the fundamentals of manual camera exposure — ISO, aperture, shutter speed, and white balance — through a guided, hands-on simulation. Built for the USTP-CDO Multimedia Systems Technology program as a capstone project, targeting a Raspberry Pi 4 with a 7" HDMI touchscreen (fixed 800x480, frameless window).
+A touchscreen kiosk app built with PySide6 (Qt for Python) that teaches students the fundamentals of manual camera exposure — ISO, aperture, shutter speed, and white balance — using a real Nikon D3500. Built for the USTP-CDO Multimedia Systems Technology program as a capstone project, targeting a Raspberry Pi 4 with a 7" HDMI touchscreen (fixed 800x480, frameless window).
 
 ## How it works
 
 A trainee works through four camera settings in sequence. For each one they:
 
 1. Read a short explainer on what the setting does (**Task Info** screen).
-2. Capture a "baseline" exposure, then use +/- steppers to dial in the correct value while a live preview panel simulates the visual effect of their setting (darkening, brightening, grain, color tint, blur) relative to the correct target (**Task Capture** screen).
-3. Get pass/fail feedback with a specific hint (e.g. "Image is too dark. Raise the ISO setting.") and retry until correct.
+2. Tap **Capture Baseline**, then turn the *physical* camera dial to adjust the setting — the app detects the camera's live ISO/aperture/shutter/white-balance over USB (`gphoto2`) and shows it on screen in real time, alongside the live HDMI preview feed (**Task Capture** screen). There is no on-screen +/- control: the real camera is the input device.
+3. Tap **Check Adjustment** to get pass/fail feedback with a specific hint (e.g. "Image is too dark. Raise the ISO setting.") and retry until correct.
 
 After all four tasks, the trainee enters their name and section, and receives a letter grade (A–D) based on total retries across all tasks, along with a per-task breakdown. Every completed session is saved to a SQLite-backed data log, which can be browsed later from the **Data Log** screen by tapping any past student to review their results.
 
-This app was built in two passes: first as a faithful implementation of an approved Claude Design UI prototype (screens, layout, copy, grading — all screen-level code), then wired up to the real hardware/software architecture specified in the capstone proposal ("Design and Development of an Interactive Camera Trainer System...") — a Nikon D3500 read over USB via `gphoto2`, live video analyzed with OpenCV, and SQLite persistence. **No screen file, `style.qss`, or visual layout changed between the two passes** — only the controller layer (`widget.py`) and backend modules did.
+Every screen is an unmodified implementation of an approved Claude Design UI prototype (layout, copy, grading), wired up to the real hardware/software architecture specified in the capstone proposal ("Design and Development of an Interactive Camera Trainer System...") — a Nikon D3500 read over USB via `gphoto2`, live video analyzed with OpenCV, and SQLite persistence.
+
+**Without a camera connected** (e.g. this dev machine), the Task Capture screen shows "No camera detected" and the setting display reads "—" — there is deliberately no simulated/fake value to interact with, so a task can't be completed until real hardware is attached. See [Deploying to Raspberry Pi 4](#deploying-to-raspberry-pi-4) below.
 
 ### Screen flow
 
@@ -42,7 +44,7 @@ Grade is determined by summed retries across all four tasks:
 ```
 main.py                     Application entry point (QApplication bootstrap, fonts, stylesheet)
 widget.py                   Kiosk shell: owns app state, screen navigation, and camera/hardware wiring
-tasks.py                    Task definitions, grading, feedback messages, and exposure-overlay math
+tasks.py                    Task definitions, grading, and feedback messages
 camera.py                   PreviewPanel (live preview widget, UI) + CameraSession (hardware controller)
 gphoto_camera.py            gPhoto2 wrapper: reads live ISO/aperture/shutter/WB from a Nikon D3500 over USB
 vision.py                   OpenCV frame analysis: brightness, sharpness, and color-warmth metrics
@@ -52,28 +54,26 @@ data_log.db                 Generated SQLite database of student records (seeded
 screens/
   start_screen.py           Start screen: title + Start / Data Log buttons
   task_info_screen.py       Per-task explainer screen
-  task_capture_screen.py    Live preview + stepper controls for adjusting a setting
+  task_capture_screen.py    Live preview + live-detected camera setting (no on-screen stepper)
   name_entry_screen.py      Name/section entry form
   grade_screen.py           Grade breakdown table (shared by session results and data log lookups)
   data_log_screen.py        List of past students; tap a row to view their grade breakdown
 tests/
-  test_tasks.py             Unit tests for grading, feedback messages, overlay math, hardware-mode toggle
+  test_tasks.py             Unit tests for grading and feedback messages
   test_data_store.py        Unit tests for SQLite persistence
   test_vision.py            Unit tests for OpenCV brightness/blur/warmth analysis (synthetic frames)
   test_gphoto_camera.py     Unit tests for the gPhoto2 wrapper (mocked hardware)
-  test_camera_session.py    Unit tests for the hardware/simulation controller (mocked hardware)
+  test_camera_session.py    Unit tests for the camera controller (mocked hardware)
 ```
 
-`widget.py` holds all application state in a single `state` dict. Every screen file is an unmodified implementation of an approved Claude Design HTML/JS prototype ("Camera Trainer Kiosk.dc.html") — copy, layout, and grading thresholds in `tasks.py` are intentionally kept in sync with that prototype.
+`widget.py` holds all application state in a single `state` dict. Every screen file is an implementation of an approved Claude Design UI prototype ("Camera Trainer Kiosk.dc.html") — copy, layout, and grading thresholds in `tasks.py` are intentionally kept in sync with that prototype, except `task_capture_screen.py`, whose on-screen +/- stepper (from the original prototype's simulated-value demo) was removed in favor of live camera detection.
 
 ## Hardware integration (per the capstone proposal)
 
-The proposal's system flowchart (Ch. 3.6.3) specifies: a Nikon D3500 connected via HDMI capture card for live video, `gphoto2` reading the camera's actual settings over USB, and OpenCV analyzing the video feed — comparing both the setting direction and the resulting image effect against a captured baseline.
+The proposal's system flowchart (Ch. 3.6.3) specifies: a Nikon D3500 connected via HDMI capture card for live video, `gphoto2` reading the camera's actual settings over USB, and OpenCV analyzing the video feed — comparing both the setting direction and the resulting image effect against a captured baseline. `camera.py`'s `CameraSession` implements exactly this, with no simulated fallback:
 
-`camera.py`'s `CameraSession` implements this as a controller with automatic fallback:
-
-- **Hardware mode** (Nikon D3500 + `gphoto2` connected): `gphoto_camera.GPhotoCamera` reads live ISO/aperture/shutter/white-balance over USB every 400ms, driving the on-screen readout directly from the physical dial. `vision.analyze_frame`/`describe_trend` (real OpenCV) measure brightness/sharpness/warmth against the captured baseline. The simulated exposure overlay goes neutral (`tasks.set_hardware_mode`) since a real frame already shows the true exposure.
-- **Simulation mode** (no camera/capture card attached — the default on a dev machine): behaves exactly as before — on-screen +/- steppers, `tasks.compute_overlay`'s simulated dark/bright/grain/tint/blur effect on the placeholder preview.
+- **Camera connected**: `gphoto_camera.GPhotoCamera` reads live ISO/aperture/shutter/white-balance over USB every 400ms, driving the on-screen readout directly from the physical dial — the trainee never touches the screen to change a value. `vision.analyze_frame`/`describe_trend` (real OpenCV) measure brightness/sharpness/warmth against a captured baseline frame.
+- **No camera connected** (e.g. this dev machine): the Task Capture screen shows "No camera detected" and the value reads "—". Nothing on screen can change the value, and `Check Adjustment` will not report a task as correct — this is intentional per the capstone's real-hardware requirement, not a bug.
 
 `CameraSession.connect()` only probes for a video device *after* `gphoto2` confirms the Nikon is actually present — this deliberately avoids a dev machine's own webcam ever being opened in its place.
 
@@ -152,4 +152,4 @@ python main.py
 pytest
 ```
 
-45 tests cover grading thresholds, feedback messages, overlay math and the hardware-mode toggle (`test_tasks.py`), SQLite persistence (`test_data_store.py`), OpenCV frame analysis (`test_vision.py`), and the gPhoto2 wrapper + camera controller against mocked hardware (`test_gphoto_camera.py`, `test_camera_session.py`). None require a physical camera.
+38 tests cover grading thresholds and feedback messages (`test_tasks.py`), SQLite persistence (`test_data_store.py`), OpenCV frame analysis (`test_vision.py`), and the gPhoto2 wrapper + camera controller against mocked hardware (`test_gphoto_camera.py`, `test_camera_session.py`). None require a physical camera.

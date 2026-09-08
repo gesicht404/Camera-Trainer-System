@@ -1,8 +1,9 @@
-"""Task configuration and pure grading/feedback/overlay logic.
+"""Task configuration and pure grading/feedback logic.
 
-Mirrors the Component logic in the approved Claude Design prototype
-("Camera Trainer Kiosk.dc.html") exactly - copy, thresholds and task
-configs are not to be changed without updating the design.
+Copy and thresholds originate from the approved Claude Design prototype
+("Camera Trainer Kiosk.dc.html") and are not to be changed without updating
+the design. Current values are read live from the physical camera (see
+gphoto_camera.py / camera.CameraSession) rather than simulated on-screen.
 """
 
 TASKS = [
@@ -78,24 +79,6 @@ GRADE_LABEL = {
     "D": "Keep Practicing!",
 }
 
-# Set by the controller layer (widget.py) once a real camera is connected. When True,
-# compute_overlay() goes neutral: a real captured frame already shows the true
-# exposure, so the simulated dark/bright/grain/tint/blur overlay (designed for the
-# no-hardware placeholder preview) must not be layered on top of it.
-_hardware_mode = False
-
-
-def set_hardware_mode(enabled: bool) -> None:
-    global _hardware_mode
-    _hardware_mode = enabled
-
-
-def is_hardware_mode() -> bool:
-    return _hardware_mode
-
-
-NEUTRAL_OVERLAY = {"dark": 0.0, "bright": 0.0, "grain": 0.0, "tint": 0.0, "blur": 0.0}
-
 
 def compute_grade(total: int) -> str:
     if total <= 6:
@@ -142,45 +125,3 @@ def incorrect_message(task: dict, cur_idx: int, target_idx: int) -> str:
     if task_id == "wb":
         return "Image still looks too warm/orange. Select the Tungsten preset to match the lighting."
     raise ValueError(f"unknown task id: {task_id}")
-
-
-def compute_overlay(task: dict, value) -> dict:
-    """Simulated exposure overlay for the live-preview placeholder.
-
-    Returns dark/bright/grain/tint opacities in [0, 1] and a blur radius in px,
-    matching the design prototype's computeOverlay(). Returns a neutral (all-zero)
-    overlay when a real camera is connected (see set_hardware_mode) since a real
-    captured frame already reflects the true exposure.
-    """
-    if _hardware_mode:
-        return dict(NEUTRAL_OVERLAY)
-
-    options = task["options"]
-    idx = options.index(value)
-    target_idx = options.index(task["target"])
-    last = len(options) - 1
-    dark = bright = grain = tint = blur = 0.0
-
-    if task["id"] == "iso":
-        if idx < target_idx:
-            dark = (target_idx - idx) / target_idx * 0.6 if target_idx else 0.0
-        elif idx > target_idx:
-            span = (last - target_idx) or 1
-            bright = (idx - target_idx) / span * 0.35
-            grain = (idx - target_idx) / span * 0.6
-    elif task["id"] == "aperture":
-        if idx > target_idx:
-            span = (last - target_idx) or 1
-            dark = (idx - target_idx) / span * 0.6
-    elif task["id"] == "shutter":
-        if idx > target_idx:
-            span = (last - target_idx) or 1
-            dark = (idx - target_idx) / span * 0.6
-        elif idx < target_idx:
-            span = target_idx or 1
-            bright = (target_idx - idx) / span * 0.3
-            blur = (target_idx - idx) / span * 7
-    elif task["id"] == "wb":
-        tint = 0.0 if value == task["target"] else 0.32
-
-    return {"dark": dark, "bright": bright, "grain": grain, "tint": tint, "blur": blur}

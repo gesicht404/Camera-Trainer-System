@@ -12,7 +12,7 @@ from screens.name_entry_screen import NameEntryScreen
 from screens.start_screen import StartScreen
 from screens.task_capture_screen import TaskCaptureScreen
 from screens.task_info_screen import TaskInfoScreen
-from tasks import TASKS, compute_grade, fresh_task_state, set_hardware_mode
+from tasks import TASKS, compute_grade, fresh_task_state
 
 CAMERA_POLL_INTERVAL_MS = 400
 
@@ -36,15 +36,14 @@ class Widget(QWidget):
 
         # Real hardware integration (Ch. 3.6.3 of the proposal): gPhoto2 reads the
         # Nikon D3500's live settings over USB, OpenCV analyzes the HDMI capture
-        # card's video feed. Falls back to the existing on-screen stepper +
-        # simulated overlay when no camera/capture card is attached.
+        # card's video feed. There is no on-screen simulation of these values -
+        # the trainee turns the physical camera dial and the system detects it.
         # The HDMI capture card's video device index varies by Pi (e.g. /dev/video1
         # instead of /dev/video0 if another video device is present) — override with
         # the CAMERA_VIDEO_INDEX env var rather than editing code.
         video_index = int(os.environ.get("CAMERA_VIDEO_INDEX", "0"))
         self.camera_session = camera_session or CameraSession(video_index=video_index)
         self.camera_session.connect()
-        set_hardware_mode(self.camera_session.hardware_available)
 
         self.state = {
             "screen": "start",
@@ -160,21 +159,6 @@ class Widget(QWidget):
         self.state["screen"] = "taskCapture"
         self.render()
 
-    def adjust_stepper(self, delta: int):
-        idx = self.state["taskIdx"]
-        task = TASKS[idx]
-        cur = self.state["taskState"][idx]
-        options = task["options"]
-        opt_idx = options.index(cur["value"])
-        next_idx = min(len(options) - 1, max(0, opt_idx + delta))
-        self.state["taskState"][idx] = {
-            **cur,
-            "value": options[next_idx],
-            "checked": False,
-            "correct": False,
-        }
-        self.render()
-
     def capture_or_check(self):
         idx = self.state["taskIdx"]
         task = TASKS[idx]
@@ -186,7 +170,7 @@ class Widget(QWidget):
             # Per Ch. 3.6.3: the system compares both the setting direction (checked
             # against the target above) and the resulting image effect. The measured
             # visual trend is recorded for internal fidelity even though correctness
-            # itself is still whether the reported/simulated setting hit the target.
+            # itself is still whether the live-detected setting hit the target.
             trend = self.camera_session.frame_trend(task["id"])
             correct = cur["value"] == task["target"]
             self.state["taskState"][idx] = {
