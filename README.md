@@ -109,9 +109,11 @@ pip install -r requirements-pi.txt
 
 The app is written to run on the Pi, but the following has only been verified through unit tests and mocked hardware on a Windows dev machine — it has **not** been exercised on a physical Pi + Nikon D3500 + capture card yet. Verify each step on the real rig, since some details (device paths, exact package versions) can only be confirmed there.
 
-1. **Use Raspberry Pi OS Bookworm, 64-bit.** PySide6 has no wheel for 32-bit ARM at all — only `aarch64`. Check with `uname -m` (must print `aarch64`, not `armv7l`).
+1. **Use a 64-bit Raspberry Pi OS, aarch64.** PySide6 has no wheel for 32-bit ARM at all — only `aarch64`. Check with `uname -m` (must print `aarch64`, not `armv7l`). The deployed rig runs Raspberry Pi OS **Trixie** (Debian 13, glibc 2.41, Python 3.13); Bookworm (glibc 2.36, Python 3.11) is also supported but needs a different PySide6 pin — see below.
 
-2. **Install PySide6 via `requirements-pi.txt`, not `requirements.txt`.** PySide6 releases from 6.8 onward ship Linux aarch64 wheels requiring `glibc >= 2.39`; Raspberry Pi OS Bookworm has `glibc 2.36`. Installing an unpinned `PySide6` on the Pi would find no compatible wheel and fall back to compiling from source (hours-long, frequently OOMs on a Pi 4). `requirements-pi.txt` pins `PySide6==6.7.3`, whose aarch64 wheel only needs `glibc >= 2.31` and supports Python 3.9–3.12 (Bookworm's default `python3` is 3.11). If a future Raspberry Pi OS ships newer glibc, this pin can be revisited.
+2. **Install PySide6 via `requirements-pi.txt`, not `requirements.txt`.** Installing an unpinned `PySide6` on the Pi risks pip resolving to a version with no compatible wheel and falling back to compiling from source (hours-long, frequently OOMs on a Pi 4) — the exact wheel a given release ships depends on both the Python version and the `glibc` version PySide6 built against:
+   - **Trixie (current rig, Python 3.13, glibc 2.41):** `requirements-pi.txt` pins `PySide6==6.11.2`, the latest version with a piwheels aarch64 wheel as of writing. PySide6 releases from 6.8 onward require `glibc >= 2.39` and support Python 3.13, both satisfied here.
+   - **Bookworm (Python 3.11, glibc 2.36):** `glibc 2.36` is below the `>= 2.39` floor those 6.8+ wheels need, so pin `PySide6==6.7.3` instead — its aarch64 wheel only needs `glibc >= 2.31` and supports Python 3.9–3.12.
 
 3. **Install `libgphoto2` before `pip install -r requirements-pi.txt`:**
    ```bash

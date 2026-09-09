@@ -5,17 +5,18 @@
 #    build on Windows/macOS dev machines. Without it, the app runs fine in simulated
 #    mode (see README).
 #
-# 2. PySide6 is pinned to 6.7.3 here instead of pulling requirements.txt's unpinned
-#    entry (pip can't resolve an unpinned and a pinned requirement for the same
-#    package together, so this file depends on requirements-common.txt instead of
+# 2. PySide6 is pinned here instead of pulling requirements.txt's unpinned entry
+#    (pip can't resolve an unpinned and a pinned requirement for the same package
+#    together, so this file depends on requirements-common.txt instead of
 #    requirements.txt).
-#    PySide6 >=6.8 ships Linux aarch64 wheels requiring glibc >= 2.39, but Raspberry
-#    Pi OS Bookworm (current stable, as of writing) only has glibc 2.36 — pip would
-#    find no installable wheel and fall back to compiling PySide6 from source, which
-#    routinely runs out of RAM / takes hours on a Pi 4. 6.7.3's aarch64 wheel only
-#    needs glibc >= 2.31, and it supports Python 3.9-3.12 (Bookworm ships Python 3.11
-#    by default). If a future Raspberry Pi OS release ships glibc >= 2.39, this pin
-#    can be dropped.
-PySide6==6.7.3
+#    PySide6 >=6.8 ships Linux aarch64 wheels requiring glibc >= 2.39. On Raspberry
+#    Pi OS Bookworm (glibc 2.36) that meant no installable wheel and a source build
+#    (hours-long, frequently OOMs on a Pi 4), so this used to be pinned to 6.7.3,
+#    whose wheel only needs glibc >= 2.31 but tops out at Python 3.12. The deployed
+#    rig now runs Raspberry Pi OS Trixie (glibc 2.41, Python 3.13), which has no
+#    wheel for 6.7.3 at all — hence 6.11.2, the latest version with a piwheels
+#    aarch64 wheel as of writing. If you're deploying to a Bookworm-based Pi
+#    (Python <=3.12, glibc 2.36), pin back to PySide6==6.7.3 instead.
+PySide6==6.11.2
 -r requirements-common.txt
 gphoto2
