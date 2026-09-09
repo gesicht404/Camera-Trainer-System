@@ -7,8 +7,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from camera import PreviewPanel
-from tasks import DEFAULTS, TASKS, correct_message, incorrect_message
+from camera import CaptureResultPanel, PreviewPanel
+from tasks import DEFAULTS, TASKS, correct_message, incorrect_message, uses_remote_capture
 
 ACTIVE_COLOR = "#ffffff"
 MUTED_COLOR = "#94a3b8"
@@ -25,6 +25,9 @@ class TaskCaptureScreen(QWidget):
 
         self.preview = PreviewPanel(self)
         root.addWidget(self.preview)
+
+        self.result_panel = CaptureResultPanel(self)
+        root.addWidget(self.result_panel)
 
         controls = QVBoxLayout()
         controls.setSpacing(12)
@@ -63,11 +66,11 @@ class TaskCaptureScreen(QWidget):
         controls.addLayout(detected_box)
 
         check_row = QHBoxLayout()
-        back_btn = QPushButton("Back")
-        back_btn.setObjectName("outline")
-        back_btn.setCursor(Qt.PointingHandCursor)
-        back_btn.clicked.connect(self.controller.go_back)
-        check_row.addWidget(back_btn)
+        self.back_btn = QPushButton("Back")
+        self.back_btn.setObjectName("outline")
+        self.back_btn.setCursor(Qt.PointingHandCursor)
+        self.back_btn.clicked.connect(self.controller.go_back)
+        check_row.addWidget(self.back_btn)
 
         self.check_btn = QPushButton()
         self.check_btn.setObjectName("primary")
@@ -108,6 +111,19 @@ class TaskCaptureScreen(QWidget):
         opt_idx = options.index(cur["value"])
         target_idx = options.index(task["target"])
 
+        is_iso = uses_remote_capture(task["id"])
+        self.preview.setVisible(not is_iso)
+        self.result_panel.setVisible(is_iso)
+        if is_iso:
+            status = cur["captureStatus"]
+            if status == "idle":
+                self.result_panel.show_idle()
+            elif status == "capturing":
+                self.result_panel.show_capturing()
+            elif status == "error":
+                self.result_panel.show_error(cur["captureError"] or "Capture failed.")
+            # "success" keeps whatever image the controller already pushed into the panel.
+
         self.eyebrow.setText(f"TASK {idx + 1} OF {len(TASKS)} · {task['label'].upper()}")
         self.instruction.setText(task["instruction"])
 
@@ -137,7 +153,12 @@ class TaskCaptureScreen(QWidget):
             self.detected_value.setText("—")
             self.detected_hint.setText("Connect the Nikon D3500 (gPhoto2) to detect its live settings.")
 
-        self.check_btn.setText("Check Adjustment" if cur["baseline"] else "Capture Baseline")
+        capturing = is_iso and cur["captureStatus"] == "capturing"
+        self.check_btn.setEnabled(not capturing)
+        self.back_btn.setEnabled(not capturing)
+        self.check_btn.setText(
+            "Capturing..." if capturing else ("Check Adjustment" if cur["baseline"] else "Capture Baseline")
+        )
         self.retries_label.setText(f"Retries: {cur['retries']}")
 
         if not cur["checked"]:

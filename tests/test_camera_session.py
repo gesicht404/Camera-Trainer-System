@@ -24,6 +24,9 @@ class FakeGPhoto:
         self._captures = list(captures) if captures is not None else []
         self._physical_captures = list(physical_captures) if physical_captures is not None else []
         self.closed = False
+        self.preview_frame_calls = 0
+        self.viewfinder_enabled_calls = 0
+        self.viewfinder_disabled_calls = 0
 
     def connect(self):
         return self._connect_ok
@@ -32,6 +35,7 @@ class FakeGPhoto:
         return self._settings
 
     def capture_preview_frame(self):
+        self.preview_frame_calls += 1
         if not self._preview_frames:
             return None
         return self._preview_frames.pop(0)
@@ -45,6 +49,12 @@ class FakeGPhoto:
         if not self._physical_captures:
             return None
         return self._physical_captures.pop(0)
+
+    def enable_viewfinder(self):
+        self.viewfinder_enabled_calls += 1
+
+    def disable_viewfinder(self):
+        self.viewfinder_disabled_calls += 1
 
     def close(self):
         self.closed = True
@@ -184,11 +194,79 @@ def test_read_frame_holds_captured_frame_instead_of_reverting_to_live_view(tmp_p
         clock=fake_clock,
     )
     session.connect()
+    session.set_live_preview_enabled(True)
 
     session.capture_baseline("iso")
     frame = session.read_frame()
 
     assert np.array_equal(frame, captured)
+
+
+def test_connect_does_not_probe_preview_frame(tmp_path):
+    gphoto = FakeGPhoto(settings={"iso": 800}, preview_frames=[solid_frame(1)])
+    session = CameraSession(gphoto_camera=gphoto, captures_dir=tmp_path)
+
+    session.connect()
+
+    assert gphoto.preview_frame_calls == 0
+    assert session.video_available is False
+
+
+def test_set_live_preview_enabled_true_enables_viewfinder_and_fetches_frame(tmp_path):
+    gphoto = FakeGPhoto(settings={"iso": 800}, preview_frames=[solid_frame(9)])
+    session = CameraSession(gphoto_camera=gphoto, captures_dir=tmp_path)
+    session.connect()
+
+    session.set_live_preview_enabled(True)
+
+    assert gphoto.viewfinder_enabled_calls == 1
+    assert session.video_available is True
+    assert np.array_equal(session.latest_frame, solid_frame(9))
+
+
+def test_set_live_preview_enabled_false_disables_viewfinder_and_video_unavailable(tmp_path):
+    gphoto = FakeGPhoto(settings={"iso": 800}, preview_frames=[solid_frame(9)])
+    session = CameraSession(gphoto_camera=gphoto, captures_dir=tmp_path)
+    session.connect()
+    session.set_live_preview_enabled(True)
+
+    session.set_live_preview_enabled(False)
+
+    assert gphoto.viewfinder_disabled_calls == 1
+    assert session.video_available is False
+
+
+def test_set_live_preview_enabled_noop_when_hardware_unavailable(tmp_path):
+    gphoto = FakeGPhoto(connect_ok=False)
+    session = CameraSession(gphoto_camera=gphoto, captures_dir=tmp_path)
+    session.connect()
+
+    session.set_live_preview_enabled(True)
+
+    assert gphoto.viewfinder_enabled_calls == 0
+
+
+def test_capture_baseline_returns_true_on_success(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            captures=[(solid_frame(50), b"jpeg-bytes", {"iso": 800})],
+        ),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+
+    assert session.capture_baseline("iso") is True
+
+
+def test_capture_baseline_returns_false_when_capture_fails(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(settings={"iso": 800}, captures=[]),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+
+    assert session.capture_baseline("iso") is False
 
 
 def test_read_frame_resumes_live_view_after_hold_expires(tmp_path):
@@ -208,6 +286,7 @@ def test_read_frame_resumes_live_view_after_hold_expires(tmp_path):
         clock=fake_clock,
     )
     session.connect()
+    session.set_live_preview_enabled(True)
 
     session.capture_baseline("iso")
     session.read_frame()  # still within the hold window

@@ -108,14 +108,19 @@ class GPhotoCamera:
             self._camera = None
             return False
         self._camera = camera
-        self._enable_viewfinder()
         return True
 
-    def _enable_viewfinder(self):
+    def enable_viewfinder(self):
+        self._set_viewfinder(1)
+
+    def disable_viewfinder(self):
+        self._set_viewfinder(0)
+
+    def _set_viewfinder(self, value):
         try:
             config = self._camera.get_config()
             widget = config.get_child_by_name("viewfinder")
-            widget.set_value(1)
+            widget.set_value(value)
             self._camera.set_config(config)
         except Exception:
             pass

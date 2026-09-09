@@ -64,6 +64,15 @@ TASKS = [
 
 DEFAULTS = {"iso": 400, "aperture": 5.6, "shutter": 60, "wb": "Auto"}
 
+# Tasks captured by remotely triggering the DSLR's shutter and transferring the result,
+# instead of a continuous live USB preview (see README "Live preview and the D3500's
+# blackout issue").
+REMOTE_CAPTURE_TASK_IDS = frozenset({"iso"})
+
+
+def uses_remote_capture(task_id: str) -> bool:
+    return task_id in REMOTE_CAPTURE_TASK_IDS
+
 GRADE_LABEL = {
     "A": "Congratulations!",
     "B": "Good Job!",
@@ -84,7 +93,15 @@ def compute_grade(total: int) -> str:
 
 def fresh_task_state():
     return [
-        {"value": t["start"], "baseline": False, "checked": False, "correct": False, "retries": 0}
+        {
+            "value": t["start"],
+            "baseline": False,
+            "checked": False,
+            "correct": False,
+            "retries": 0,
+            "captureStatus": "idle",
+            "captureError": None,
+        }
         for t in TASKS
     ]
 

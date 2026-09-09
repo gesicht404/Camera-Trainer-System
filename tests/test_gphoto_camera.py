@@ -25,11 +25,32 @@ class FakeCameraFile:
         return self._data
 
 
+class FakeConfigWidget:
+    def __init__(self):
+        self.value = None
+
+    def set_value(self, value):
+        self.value = value
+
+
+class FakeConfig:
+    def __init__(self):
+        self.viewfinder = FakeConfigWidget()
+
+    def get_child_by_name(self, name):
+        if name == "viewfinder":
+            return self.viewfinder
+        raise KeyError(name)
+
+
 class FakeCamera:
     def __init__(self, capture_jpeg_bytes, events=None):
         self._capture_jpeg_bytes = capture_jpeg_bytes
         self._events = list(events) if events is not None else []
         self.deleted_paths = []
+        self.config = FakeConfig()
+        self.get_config_calls = 0
+        self.set_config_calls = 0
 
     def init(self):
         pass
@@ -50,6 +71,13 @@ class FakeCamera:
         if not self._events:
             return (FakeGPhoto2Module.GP_EVENT_TIMEOUT, None)
         return self._events.pop(0)
+
+    def get_config(self):
+        self.get_config_calls += 1
+        return self.config
+
+    def set_config(self, config):
+        self.set_config_calls += 1
 
 
 class FakeGPhoto2Module:
@@ -198,3 +226,35 @@ def test_poll_physical_capture_returns_none_when_not_connected():
     camera = GPhotoCamera(gphoto2_module=fake_module)
 
     assert camera.poll_physical_capture() is None
+
+
+def test_connect_does_not_enable_viewfinder():
+    fake_module = FakeGPhoto2Module(b"")
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+
+    camera.connect()
+
+    assert camera._camera.get_config_calls == 0
+    assert camera._camera.set_config_calls == 0
+
+
+def test_enable_viewfinder_sets_config_value_to_one():
+    fake_module = FakeGPhoto2Module(b"")
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+
+    camera.enable_viewfinder()
+
+    assert camera._camera.config.viewfinder.value == 1
+    assert camera._camera.set_config_calls == 1
+
+
+def test_disable_viewfinder_sets_config_value_to_zero():
+    fake_module = FakeGPhoto2Module(b"")
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+
+    camera.disable_viewfinder()
+
+    assert camera._camera.config.viewfinder.value == 0
+    assert camera._camera.set_config_calls == 1
