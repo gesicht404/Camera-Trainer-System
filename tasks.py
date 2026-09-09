@@ -93,15 +93,7 @@ def compute_grade(total: int) -> str:
 
 def fresh_task_state():
     return [
-        {
-            "value": t["start"],
-            "baseline": False,
-            "checked": False,
-            "correct": False,
-            "retries": 0,
-            "captureStatus": "idle",
-            "captureError": None,
-        }
+        {"value": t["start"], "baseline": False, "checked": False, "correct": False, "retries": 0}
         for t in TASKS
     ]
 

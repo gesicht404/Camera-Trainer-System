@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import cv2
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QWidget
 
@@ -57,7 +57,7 @@ class PreviewPanel(QWidget):
 
 
 class CaptureResultPanel(QWidget):
-    """Shows the result of a remote-triggered DSLR capture: idle / capturing / success / error."""
+    """Shows the result of a shutter-triggered DSLR capture: idle (waiting for a shutter press) / success."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -85,14 +85,9 @@ class CaptureResultPanel(QWidget):
         self.state = "idle"
         self._pixmap = None
         self.image_label.hide()
-        self.message_label.setText("Ready to capture\nPosition your document using the DSLR")
-        self.message_label.show()
-
-    def show_capturing(self):
-        self.state = "capturing"
-        self._pixmap = None
-        self.image_label.hide()
-        self.message_label.setText("Capturing...\nTransferring image from the DSLR")
+        self.message_label.setText(
+            "Position your document, then press the shutter button on the camera to capture"
+        )
         self.message_label.show()
 
     def show_result(self, pixmap: QPixmap):
@@ -101,13 +96,6 @@ class CaptureResultPanel(QWidget):
         self.message_label.hide()
         self._render_pixmap()
         self.image_label.show()
-
-    def show_error(self, message: str):
-        self.state = "error"
-        self._pixmap = None
-        self.image_label.hide()
-        self.message_label.setText(f"Capture failed\n{message}\nClick the button to retry.")
-        self.message_label.show()
 
     def _render_pixmap(self):
         if self._pixmap is not None:
@@ -124,15 +112,11 @@ class CaptureResultPanel(QWidget):
         self._render_pixmap()
 
 
-def frame_to_qimage(frame: np.ndarray) -> QImage:
+def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     height, width, channels = rgb.shape
     image = QImage(rgb.data, width, height, channels * width, QImage.Format_RGB888)
-    return image.copy()
-
-
-def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
-    return QPixmap.fromImage(frame_to_qimage(frame))
+    return QPixmap.fromImage(image.copy())
 
 
 PREVIEW_HOLD_SECONDS = 3.0
@@ -229,14 +213,24 @@ class CameraSession:
             )
 
     def capture_baseline(self, task_id: str) -> bool:
-        frame = self._capture_real_frame(task_id)
+        return self._record_baseline(task_id, self._capture_real_frame(task_id))
+
+    def frame_trend(self, task_id: str):
+        return self._compute_trend(task_id, self._capture_real_frame(task_id))
+
+    def record_physical_baseline(self, task_id: str) -> bool:
+        return self._record_baseline(task_id, self.poll_physical_capture(task_id))
+
+    def physical_capture_trend(self, task_id: str):
+        return self._compute_trend(task_id, self.poll_physical_capture(task_id))
+
+    def _record_baseline(self, task_id: str, frame) -> bool:
         if frame is None:
             return False
         self._baseline_metrics[task_id] = analyze_frame(frame)
         return True
 
-    def frame_trend(self, task_id: str):
-        frame = self._capture_real_frame(task_id)
+    def _compute_trend(self, task_id: str, frame):
         baseline = self._baseline_metrics.get(task_id)
         if frame is None or baseline is None:
             return None
@@ -244,33 +238,3 @@ class CameraSession:
 
     def close(self):
         self._gphoto.close()
-
-
-class CaptureWorker(QThread):
-    """Runs a real DSLR capture (shutter fire + USB transfer) off the UI thread."""
-
-    succeeded = Signal(QImage, object)
-    failed = Signal(str)
-
-    def __init__(self, camera_session: CameraSession, task_id: str, mode: str, parent=None):
-        super().__init__(parent)
-        self.camera_session = camera_session
-        self.task_id = task_id
-        self.mode = mode
-
-    def run(self):
-        trend = None
-        try:
-            if self.mode == "baseline":
-                ok = self.camera_session.capture_baseline(self.task_id)
-            else:
-                trend = self.camera_session.frame_trend(self.task_id)
-                ok = trend is not None
-        except Exception as exc:
-            self.failed.emit(str(exc))
-            return
-
-        if ok:
-            self.succeeded.emit(frame_to_qimage(self.camera_session.latest_frame), trend)
-        else:
-            self.failed.emit("The DSLR did not return an image. Check the connection and try again.")

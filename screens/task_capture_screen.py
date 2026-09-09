@@ -114,15 +114,10 @@ class TaskCaptureScreen(QWidget):
         is_iso = uses_remote_capture(task["id"])
         self.preview.setVisible(not is_iso)
         self.result_panel.setVisible(is_iso)
-        if is_iso:
-            status = cur["captureStatus"]
-            if status == "idle":
-                self.result_panel.show_idle()
-            elif status == "capturing":
-                self.result_panel.show_capturing()
-            elif status == "error":
-                self.result_panel.show_error(cur["captureError"] or "Capture failed.")
-            # "success" keeps whatever image the controller already pushed into the panel.
+        if is_iso and not cur["baseline"]:
+            self.result_panel.show_idle()
+        # once a baseline exists, leave whatever the controller already pushed into the
+        # panel showing (the most recent shutter-press photo) rather than resetting it here.
 
         self.eyebrow.setText(f"TASK {idx + 1} OF {len(TASKS)} · {task['label'].upper()}")
         self.instruction.setText(task["instruction"])
@@ -153,12 +148,8 @@ class TaskCaptureScreen(QWidget):
             self.detected_value.setText("—")
             self.detected_hint.setText("Connect the Nikon D3500 (gPhoto2) to detect its live settings.")
 
-        capturing = is_iso and cur["captureStatus"] == "capturing"
-        self.check_btn.setEnabled(not capturing)
-        self.back_btn.setEnabled(not capturing)
-        self.check_btn.setText(
-            "Capturing..." if capturing else ("Check Adjustment" if cur["baseline"] else "Capture Baseline")
-        )
+        self.check_btn.setVisible(not is_iso)
+        self.check_btn.setText("Check Adjustment" if cur["baseline"] else "Capture Baseline")
         self.retries_label.setText(f"Retries: {cur['retries']}")
 
         if not cur["checked"]:

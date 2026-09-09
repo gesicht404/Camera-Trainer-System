@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QCoreApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -12,12 +11,11 @@ from widget import Widget
 
 
 class FakeGPhoto:
-    def __init__(self, settings=None, captures=None):
+    def __init__(self, settings=None, physical_captures=None):
         self._settings = settings or {}
-        self._captures = list(captures) if captures is not None else []
+        self._physical_captures = list(physical_captures) if physical_captures is not None else []
         self.viewfinder_enabled_calls = 0
         self.viewfinder_disabled_calls = 0
-        self.closed = False
 
     def connect(self):
         return True
@@ -29,12 +27,12 @@ class FakeGPhoto:
         return None
 
     def capture_image(self):
-        if not self._captures:
-            return None
-        return self._captures.pop(0)
+        return None
 
     def poll_physical_capture(self):
-        return None
+        if not self._physical_captures:
+            return None
+        return self._physical_captures.pop(0)
 
     def enable_viewfinder(self):
         self.viewfinder_enabled_calls += 1
@@ -43,7 +41,7 @@ class FakeGPhoto:
         self.viewfinder_disabled_calls += 1
 
     def close(self):
-        self.closed = True
+        pass
 
 
 def solid_frame(value, size=8):
@@ -68,8 +66,7 @@ def test_entering_iso_task_screen_keeps_live_preview_disabled(qapp, tmp_path):
 
 
 def test_proceeding_to_aperture_task_enables_live_preview(qapp, tmp_path):
-    fake = FakeGPhoto(settings={"iso": 100})
-    widget, fake = make_widget(tmp_path, fake)
+    widget, fake = make_widget(tmp_path)
     widget.start_flow()
     widget.open_capture()
 
@@ -79,67 +76,71 @@ def test_proceeding_to_aperture_task_enables_live_preview(qapp, tmp_path):
     assert fake.viewfinder_enabled_calls == 1
 
 
-def test_capture_or_check_on_iso_starts_worker_and_disables_button(qapp, tmp_path):
-    fake = FakeGPhoto(settings={"iso": 100}, captures=[(solid_frame(1), b"jpeg", {"iso": 100})])
+def test_check_btn_is_hidden_for_iso_and_shown_for_other_tasks(qapp, tmp_path):
+    widget, fake = make_widget(tmp_path)
+    widget.start_flow()
+    widget.open_capture()
+
+    assert widget.task_capture_screen.check_btn.isHidden() is True
+
+    widget.proceed()
+    widget.open_capture()
+
+    assert widget.task_capture_screen.check_btn.isHidden() is False
+
+
+def test_physical_shutter_press_records_baseline_and_shows_captured_photo(qapp, tmp_path):
+    fake = FakeGPhoto(settings={"iso": 100}, physical_captures=[(solid_frame(1), b"jpeg", {"iso": 100})])
     widget, fake = make_widget(tmp_path, fake)
     widget.start_flow()
     widget.open_capture()
 
-    widget.capture_or_check()
+    widget._poll_camera()
 
-    assert widget.state["taskState"][0]["captureStatus"] == "capturing"
-    assert widget.task_capture_screen.check_btn.isEnabled() is False
-    assert widget._capture_worker is not None
-
-    widget._capture_worker.wait()
-    QCoreApplication.processEvents()
-
-    assert widget.state["taskState"][0]["captureStatus"] == "success"
     assert widget.state["taskState"][0]["baseline"] is True
-    assert widget._capture_worker is None
-    assert widget.task_capture_screen.check_btn.isEnabled() is True
+    assert widget.task_capture_screen.result_panel.state == "success"
 
 
-def test_capture_or_check_ignores_duplicate_click_while_capturing(qapp, tmp_path):
-    fake = FakeGPhoto(settings={"iso": 100}, captures=[(solid_frame(1), b"jpeg", {"iso": 100})])
+def test_poll_camera_on_iso_does_nothing_without_a_shutter_press(qapp, tmp_path):
+    widget, fake = make_widget(tmp_path)
+    widget.start_flow()
+    widget.open_capture()
+
+    widget._poll_camera()
+
+    assert widget.state["taskState"][0]["baseline"] is False
+    assert widget.task_capture_screen.result_panel.state == "idle"
+
+
+def test_second_shutter_press_completes_check_adjustment(qapp, tmp_path):
+    fake = FakeGPhoto(
+        settings={"iso": 100},
+        physical_captures=[
+            (solid_frame(1), b"jpeg1", {"iso": 100}),
+            (solid_frame(2), b"jpeg2", {"iso": 100}),
+        ],
+    )
     widget, fake = make_widget(tmp_path, fake)
     widget.start_flow()
     widget.open_capture()
 
-    widget.capture_or_check()
-    first_worker = widget._capture_worker
-    widget.capture_or_check()
+    widget._poll_camera()
+    assert widget.state["taskState"][0]["baseline"] is True
 
-    assert widget._capture_worker is first_worker
+    widget._poll_camera()
 
-    widget._capture_worker.wait()
-    QCoreApplication.processEvents()
+    assert widget.state["taskState"][0]["checked"] is True
 
 
-def test_close_event_waits_for_in_flight_capture_before_closing_camera(qapp, tmp_path):
-    fake = FakeGPhoto(settings={"iso": 100}, captures=[(solid_frame(1), b"jpeg", {"iso": 100})])
+def test_poll_camera_skips_remote_capture_polling_for_non_iso_tasks(qapp, tmp_path):
+    fake = FakeGPhoto(settings={"aperture": 5.6}, physical_captures=[(solid_frame(1), b"jpeg", {})])
     widget, fake = make_widget(tmp_path, fake)
     widget.start_flow()
+    widget.state["taskIdx"] = 1
     widget.open_capture()
 
-    widget.capture_or_check()
-    assert widget._capture_worker is not None
+    widget._poll_camera()
 
-    widget.close()
-
-    assert fake.closed is True
-
-
-def test_capture_or_check_on_iso_shows_error_on_failed_capture(qapp, tmp_path):
-    fake = FakeGPhoto(settings={"iso": 100}, captures=[])
-    widget, fake = make_widget(tmp_path, fake)
-    widget.start_flow()
-    widget.open_capture()
-
-    widget.capture_or_check()
-    widget._capture_worker.wait()
-    QCoreApplication.processEvents()
-
-    assert widget.state["taskState"][0]["captureStatus"] == "error"
-    assert widget.state["taskState"][0]["captureError"]
-    assert widget.task_capture_screen.check_btn.isEnabled() is True
+    # aperture uses the original preview-panel path; the physical press should
+    # update the live preview thumbnail, not the (hidden) ISO result panel or baseline state.
+    assert widget.state["taskState"][1]["baseline"] is False

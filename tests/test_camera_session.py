@@ -177,6 +177,63 @@ def test_poll_physical_capture_returns_none_when_hardware_unavailable(tmp_path):
     assert session.poll_physical_capture("iso") is None
 
 
+def test_record_physical_baseline_returns_true_and_stores_metrics_on_shutter_press(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            physical_captures=[(solid_frame(50), b"jpeg-bytes", {"iso": 800})],
+        ),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+
+    assert session.record_physical_baseline("iso") is True
+    assert np.array_equal(session.latest_frame, solid_frame(50))
+
+
+def test_record_physical_baseline_returns_false_when_no_shutter_press(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(settings={"iso": 800}),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+
+    assert session.record_physical_baseline("iso") is False
+
+
+def test_physical_capture_trend_returns_none_without_a_recorded_baseline(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            physical_captures=[(solid_frame(60), b"jpeg-bytes", {"iso": 800})],
+        ),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+
+    assert session.physical_capture_trend("iso") is None
+
+
+def test_physical_capture_trend_compares_new_shutter_press_against_baseline(tmp_path):
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            physical_captures=[
+                (solid_frame(50), b"jpeg-bytes-1", {"iso": 800}),
+                (solid_frame(120), b"jpeg-bytes-2", {"iso": 800}),
+            ],
+        ),
+        captures_dir=tmp_path,
+    )
+    session.connect()
+    session.record_physical_baseline("iso")
+
+    trend = session.physical_capture_trend("iso")
+
+    assert trend is not None
+    assert np.array_equal(session.latest_frame, solid_frame(120))
+
+
 def test_read_frame_holds_captured_frame_instead_of_reverting_to_live_view(tmp_path):
     clock_values = iter([0.0, 0.0, 1.0])
 

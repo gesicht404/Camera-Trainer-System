@@ -1,10 +1,7 @@
-import logging
-
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
-from camera import CameraSession, CaptureWorker, frame_to_qpixmap
+from camera import CameraSession, frame_to_qpixmap
 from data_store import DataStore
 from screens.data_log_screen import DataLogScreen
 from screens.grade_screen import GradeScreen
@@ -15,10 +12,7 @@ from screens.task_capture_screen import TaskCaptureScreen
 from screens.task_info_screen import TaskInfoScreen
 from tasks import TASKS, compute_grade, fresh_task_state, uses_remote_capture
 
-logger = logging.getLogger(__name__)
-
 CAMERA_POLL_INTERVAL_MS = 400
-CAPTURE_SHUTDOWN_TIMEOUT_MS = 5000
 
 SCREEN_INDEX = {
     "start": 0,
@@ -39,7 +33,6 @@ class Widget(QWidget):
 
         self.camera_session = camera_session or CameraSession()
         self.camera_session.connect()
-        self._capture_worker = None
         self._live_preview_task_id = None
 
         self.state = {
@@ -87,11 +80,6 @@ class Widget(QWidget):
 
     def closeEvent(self, event):
         self._camera_timer.stop()
-        if self._capture_worker is not None and not self._capture_worker.wait(CAPTURE_SHUTDOWN_TIMEOUT_MS):
-            logger.warning(
-                "Capture worker did not finish within %dms of app close; closing anyway.",
-                CAPTURE_SHUTDOWN_TIMEOUT_MS,
-            )
         self.camera_session.close()
         self.data_store.close()
         super().closeEvent(event)
@@ -99,13 +87,13 @@ class Widget(QWidget):
     def _poll_camera(self):
         if self.state["screen"] != "taskCapture":
             return
-        if self._capture_worker is not None:
-            return
 
         idx = self.state["taskIdx"]
         task = TASKS[idx]
 
-        if not uses_remote_capture(task["id"]):
+        if uses_remote_capture(task["id"]):
+            self._poll_remote_capture(idx, task)
+        else:
             physical_frame = None
             if self.camera_session.hardware_available:
                 physical_frame = self.camera_session.poll_physical_capture(task["id"])
@@ -127,6 +115,33 @@ class Widget(QWidget):
                 "correct": False,
             }
             self.render()
+
+    def _poll_remote_capture(self, idx: int, task: dict):
+        if not self.camera_session.hardware_available:
+            return
+
+        cur = self.state["taskState"][idx]
+        if not cur["baseline"]:
+            if not self.camera_session.record_physical_baseline(task["id"]):
+                return
+            self.state["taskState"][idx] = {**cur, "baseline": True}
+        else:
+            trend = self.camera_session.physical_capture_trend(task["id"])
+            if trend is None:
+                return
+            correct = cur["value"] == task["target"]
+            self.state["taskState"][idx] = {
+                **cur,
+                "checked": True,
+                "correct": correct,
+                "retries": cur["retries"] if correct else cur["retries"] + 1,
+                "trend": trend,
+            }
+
+        frame = self.camera_session.latest_frame
+        if frame is not None:
+            self.task_capture_screen.result_panel.show_result(frame_to_qpixmap(frame))
+        self.render()
 
     def go_start(self):
         self.state.update(
@@ -195,10 +210,6 @@ class Widget(QWidget):
     def capture_or_check(self):
         idx = self.state["taskIdx"]
         task = TASKS[idx]
-        if uses_remote_capture(task["id"]):
-            self._start_iso_capture()
-            return
-
         cur = self.state["taskState"][idx]
         if not cur["baseline"]:
             self.camera_session.capture_baseline(task["id"])
@@ -214,61 +225,6 @@ class Widget(QWidget):
                 "trend": trend,
             }
         self.render()
-
-    def _start_iso_capture(self):
-        if self._capture_worker is not None:
-            return
-
-        idx = self.state["taskIdx"]
-        task = TASKS[idx]
-        cur = self.state["taskState"][idx]
-        mode = "check" if cur["baseline"] else "baseline"
-
-        self.state["taskState"][idx] = {**cur, "captureStatus": "capturing", "captureError": None}
-        self.render()
-
-        worker = CaptureWorker(self.camera_session, task["id"], mode)
-        worker.task_idx = idx
-        worker.succeeded.connect(self._on_iso_capture_succeeded)
-        worker.failed.connect(self._on_iso_capture_failed)
-        worker.finished.connect(self._on_iso_capture_finished)
-        self._capture_worker = worker
-        worker.start()
-
-    def _on_iso_capture_succeeded(self, image, trend):
-        worker = self.sender()
-        idx = worker.task_idx
-        task = TASKS[idx]
-        cur = self.state["taskState"][idx]
-        if worker.mode == "baseline":
-            updated = {**cur, "baseline": True, "captureStatus": "success", "captureError": None}
-        else:
-            correct = cur["value"] == task["target"]
-            updated = {
-                **cur,
-                "checked": True,
-                "correct": correct,
-                "retries": cur["retries"] if correct else cur["retries"] + 1,
-                "trend": trend,
-                "captureStatus": "success",
-                "captureError": None,
-            }
-        self.state["taskState"][idx] = updated
-        self.task_capture_screen.result_panel.show_result(QPixmap.fromImage(image))
-        self.render()
-
-    def _on_iso_capture_failed(self, message):
-        worker = self.sender()
-        idx = worker.task_idx
-        cur = self.state["taskState"][idx]
-        self.state["taskState"][idx] = {**cur, "captureStatus": "error", "captureError": message}
-        self.render()
-
-    def _on_iso_capture_finished(self):
-        worker = self._capture_worker
-        self._capture_worker = None
-        if worker is not None:
-            worker.deleteLater()
 
     def proceed(self):
         if self.state["taskIdx"] < len(TASKS) - 1:

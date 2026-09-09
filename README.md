@@ -8,9 +8,9 @@ A trainee works through four camera settings in sequence. For each one they:
 
 1. Read a short explainer on what the setting does (**Task Info** screen).
 2. Turn the *physical* camera dial to adjust the setting — the app detects the camera's live ISO/aperture/shutter/white-balance over USB (`gphoto2`) and shows it on screen in real time (**Task Capture** screen). There is no on-screen +/- control: the real camera is the input device.
-   - For **aperture, shutter speed, and white balance**, the screen also shows a live USB preview feed, and **Capture Baseline**/**Check Adjustment** fire a real (software-triggered) gphoto2 capture synchronously.
-   - For **ISO**, there is no live preview — the D3500's screen blacks out while gphoto2 liveview is engaged, so instead the app shows a capture-result panel (ready / capturing / captured photo / error). **Capture Baseline**/**Check Adjustment** act as a remote shutter trigger: the app tells the camera to fire, downloads and deletes the resulting file off the card, and displays the transferred photo — run on a background thread (`CaptureWorker`) so the kiosk UI stays responsive while the DSLR does its thing.
-3. Tap **Check Adjustment** to get pass/fail feedback with a specific hint (e.g. "Image is too dark. Raise the ISO setting.") and retry until correct.
+   - For **aperture, shutter speed, and white balance**, the screen also shows a live USB preview feed, and tapping **Capture Baseline**/**Check Adjustment** fires a real (software-triggered) gphoto2 capture synchronously.
+   - For **ISO**, there is no live preview — the D3500's screen blacks out while gphoto2 liveview is engaged, so instead the app shows a capture-result panel prompting the trainee to press the camera's own **physical shutter button**. There's no on-screen capture button for this task: the app detects the shutter press in the background, downloads and deletes the resulting file off the card, and displays the transferred photo directly — the DSLR itself is what takes the picture, not a software-triggered command.
+3. For aperture/shutter/white-balance, tap **Check Adjustment**; for ISO, press the shutter button again — either way, you get pass/fail feedback with a specific hint (e.g. "Image is too dark. Raise the ISO setting.") and retry until correct.
 
 After all four tasks, the trainee enters their name and section, and receives a letter grade (A–D) based on total retries across all tasks, along with a per-task breakdown. Every completed session is saved to a SQLite-backed data log, which can be browsed later from the **Data Log** screen by tapping any past student to review their results.
 
@@ -47,7 +47,7 @@ Grade is determined by summed retries across all four tasks:
 main.py                     Application entry point (QApplication bootstrap, fonts, stylesheet)
 widget.py                   Kiosk shell: owns app state, screen navigation, and camera/hardware wiring
 tasks.py                    Task definitions, grading, and feedback messages
-camera.py                   PreviewPanel (live preview, non-ISO tasks) + CaptureResultPanel (ISO remote-capture UI) + CameraSession (hardware controller) + CaptureWorker (background-thread DSLR capture)
+camera.py                   PreviewPanel (live preview, non-ISO tasks) + CaptureResultPanel (ISO shutter-press result UI) + CameraSession (hardware controller)
 gphoto_camera.py            gPhoto2 wrapper: reads live ISO/aperture/shutter/WB from a Nikon D3500 over USB
 vision.py                   OpenCV frame analysis: brightness, sharpness, and color-warmth metrics
 data_store.py               SQLite-backed persistence for completed student session records
@@ -56,7 +56,7 @@ data_log.db                 Generated SQLite database of student records (seeded
 screens/
   start_screen.py           Start screen: title + Start / Data Log buttons
   task_info_screen.py       Per-task explainer screen
-  task_capture_screen.py    Live-detected camera setting (no on-screen stepper); live preview for aperture/shutter/WB, remote-capture result panel for ISO
+  task_capture_screen.py    Live-detected camera setting (no on-screen stepper); live preview + capture button for aperture/shutter/WB, physical-shutter-press result panel (no capture button) for ISO
   name_entry_screen.py      Name/section entry form
   grade_screen.py           Grade breakdown table (shared by session results and data log lookups)
   data_log_screen.py        List of past students; tap a row to view their grade breakdown
@@ -66,9 +66,8 @@ tests/
   test_vision.py            Unit tests for OpenCV brightness/blur/warmth analysis (synthetic frames)
   test_gphoto_camera.py     Unit tests for the gPhoto2 wrapper (mocked hardware)
   test_camera_session.py    Unit tests for the camera controller (mocked hardware)
-  test_capture_worker.py    Unit tests for the background-thread DSLR capture worker (mocked hardware)
-  test_capture_result_panel.py  Unit tests for the ISO capture-result panel's idle/capturing/success/error states
-  test_widget_iso_capture.py    Integration tests for the ISO remote-capture flow (viewfinder toggling, async capture, duplicate-click guard, error handling)
+  test_capture_result_panel.py  Unit tests for the ISO capture-result panel's idle/success states
+  test_widget_iso_capture.py    Integration tests for the ISO physical-shutter-press flow (viewfinder toggling, baseline/check via poll_camera, non-ISO tasks unaffected)
 ```
 
 `widget.py` holds all application state in a single `state` dict. Every screen file is an implementation of an approved Claude Design UI prototype ("Camera Trainer Kiosk.dc.html") — copy, layout, and grading thresholds in `tasks.py` are intentionally kept in sync with that prototype, except `task_capture_screen.py`, whose on-screen +/- stepper (from the original prototype's simulated-value demo) was removed in favor of live camera detection.
@@ -80,9 +79,9 @@ The proposal's system flowchart (Ch. 3.6.3) specifies: a Nikon D3500 connected o
 - **Camera connected**: `gphoto_camera.GPhotoCamera` reads live ISO/aperture/shutter/white-balance over USB every 400ms, driving the on-screen readout directly from the physical dial — the trainee never touches the screen to change a value. `vision.analyze_frame`/`describe_trend` (real OpenCV) measure brightness/sharpness/warmth against a captured baseline frame.
 - **No camera connected** (e.g. this dev machine): the Task Capture screen shows "No camera detected" and the value reads "—". Nothing on screen can change the value, and `Check Adjustment` will not report a task as correct — this is intentional per the capstone's real-hardware requirement, not a bug.
 
-**Live preview and the D3500's blackout issue**: engaging gphoto2 liveview (the camera's `viewfinder` config widget) flips the mirror up and blacks out the D3500's own screen/viewfinder for as long as it's enabled. `CameraSession.set_live_preview_enabled()` toggles it on a per-task basis instead of once at connect: `widget.py` calls it whenever the active task changes, enabling it for aperture/shutter/white-balance (which use `PreviewPanel`'s live USB feed) and disabling it for ISO (which shows no live preview at all, so the trainee can frame their shot through the D3500's own screen/viewfinder normally). Physical-shutter-button polling (`CameraSession.poll_physical_capture`) likewise only runs for the non-ISO tasks.
+**Live preview and the D3500's blackout issue**: engaging gphoto2 liveview (the camera's `viewfinder` config widget) flips the mirror up and blacks out the D3500's own screen/viewfinder for as long as it's enabled. `CameraSession.set_live_preview_enabled()` toggles it on a per-task basis instead of once at connect: `widget.py` calls it whenever the active task changes, enabling it for aperture/shutter/white-balance (which use `PreviewPanel`'s live USB feed) and disabling it for ISO (which shows no live preview at all, so the trainee can frame their shot through the D3500's own screen/viewfinder normally).
 
-**ISO's remote-capture flow**: `Capture Baseline`/`Check Adjustment` on the ISO task run `CaptureWorker` (a `QThread`) instead of calling `CameraSession.capture_baseline`/`frame_trend` synchronously on the UI thread — a real DSLR capture (shutter fire + USB download + delete-off-card) takes a visible moment, and `libgphoto2`'s camera handle isn't safe to touch from two threads at once. While the worker runs, the on-screen dial-value polling in `widget._poll_camera` is paused and the Capture/Back buttons are disabled, so there's exactly one in-flight capture and no concurrent access to the camera handle. On success the worker emits the captured frame (as a `QImage`, since `QPixmap` isn't safe to build off the main thread) back to `widget.py`, which displays it in `CaptureResultPanel`; on failure it emits an error message and the panel shows a retry prompt.
+**ISO's shutter-triggered capture flow**: unlike the other three tasks, ISO has no on-screen capture button — the trainee presses the camera's own physical shutter button, and the DSLR itself does the actual capturing (mirror, exposure, sensor processing). `widget._poll_camera()` polls `CameraSession.poll_physical_capture()` every tick (as it already does for the other tasks' "take a photo with the physical button" convenience feature), but for ISO a detected press is treated as fulfilling the task's current phase: `CameraSession.record_physical_baseline()` for the first press, `CameraSession.physical_capture_trend()` for the next — the same baseline/trend bookkeeping `capture_baseline()`/`frame_trend()` do for the software-triggered tasks, just fed a physically-captured frame instead of a software-triggered one. The transferred photo is displayed in `CaptureResultPanel` as soon as it's detected; there's no separate "capturing" or "error" state, since a missed/no-op poll tick just means "no press yet," not a failure — the trainee retains full control by pressing the shutter again.
 
 `python-gphoto2` requires the native `libgphoto2` C library (Linux-only — see `requirements-pi.txt`), so it can't be installed or tested on Windows/macOS; `gphoto_camera.py` and `camera.CameraSession` are unit-tested against a mocked `gphoto2` module instead (`tests/test_gphoto_camera.py`, `tests/test_camera_session.py`). Real end-to-end hardware testing must happen on the deployed Raspberry Pi rig.
 
