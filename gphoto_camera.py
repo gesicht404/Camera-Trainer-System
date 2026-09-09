@@ -11,6 +11,9 @@ controller when it returns False (e.g. during development on a machine with no
 camera/capture card attached).
 """
 
+import numpy as np
+import cv2
+
 from tasks import TASKS
 
 # gphoto2 config widget names for a Nikon D3500 body, keyed by our task ids.
@@ -100,7 +103,34 @@ class GPhotoCamera:
             self._camera = None
             return False
         self._camera = camera
+        self._enable_viewfinder()
         return True
+
+    def _enable_viewfinder(self):
+        """Best-effort: many Nikon bodies only feed capture_preview() once USB live
+        view is switched on via the 'viewfinder' config widget. Not every body/
+        firmware exposes it, so any failure here is silently ignored."""
+        try:
+            config = self._camera.get_config()
+            widget = config.get_child_by_name("viewfinder")
+            widget.set_value(1)
+            self._camera.set_config(config)
+        except Exception:
+            pass
+
+    def capture_preview_frame(self):
+        """Grabs one live-view frame over USB via gphoto2's capture_preview(), or
+        None if not connected or the camera doesn't support/allow it right now."""
+        if self._camera is None:
+            return None
+        try:
+            camera_file = self._camera.capture_preview()
+            data = camera_file.get_data_and_size()
+            buf = np.frombuffer(bytes(data), dtype=np.uint8)
+            frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        except Exception:
+            return None
+        return frame
 
     def is_connected(self) -> bool:
         return self._camera is not None

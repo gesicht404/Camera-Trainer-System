@@ -1,6 +1,4 @@
 # This Python file uses the following encoding: utf-8
-import os
-
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
@@ -37,14 +35,10 @@ class Widget(QWidget):
         self.data_store = data_store or DataStore()
 
         # Real hardware integration (Ch. 3.6.3 of the proposal): gPhoto2 reads the
-        # Nikon D3500's live settings over USB, OpenCV analyzes the HDMI capture
-        # card's video feed. There is no on-screen simulation of these values -
-        # the trainee turns the physical camera dial and the system detects it.
-        # The HDMI capture card's video device index varies by Pi (e.g. /dev/video1
-        # instead of /dev/video0 if another video device is present) — override with
-        # the CAMERA_VIDEO_INDEX env var rather than editing code.
-        video_index = int(os.environ.get("CAMERA_VIDEO_INDEX", "0"))
-        self.camera_session = camera_session or CameraSession(video_index=video_index)
+        # Nikon D3500's live settings and live-view frames over USB, OpenCV analyzes
+        # the video feed. There is no on-screen simulation of these values - the
+        # trainee turns the physical camera dial and the system detects it.
+        self.camera_session = camera_session or CameraSession()
         self.camera_session.connect()
 
         self.state = {

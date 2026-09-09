@@ -9,9 +9,14 @@ from camera import CameraSession
 
 
 class FakeGPhoto:
-    def __init__(self, settings=None, connect_ok=True):
+    """`preview_frames`, when given, is a queue popped by each capture_preview_frame()
+    call - mirrors a live USB feed where every call can return a different frame.
+    `None` (the default) means the camera never returns a preview frame at all."""
+
+    def __init__(self, settings=None, connect_ok=True, preview_frames=None):
         self._settings = settings or {}
         self._connect_ok = connect_ok
+        self._preview_frames = list(preview_frames) if preview_frames is not None else []
         self.closed = False
 
     def connect(self):
@@ -20,26 +25,13 @@ class FakeGPhoto:
     def read_settings(self):
         return self._settings
 
+    def capture_preview_frame(self):
+        if not self._preview_frames:
+            return None
+        return self._preview_frames.pop(0)
+
     def close(self):
         self.closed = True
-
-
-class FakeVideoCapture:
-    def __init__(self, frames=None, opened=True):
-        self._frames = list(frames or [])
-        self._opened = opened
-        self.released = False
-
-    def isOpened(self):
-        return self._opened
-
-    def read(self):
-        if not self._frames:
-            return False, None
-        return True, self._frames.pop(0)
-
-    def release(self):
-        self.released = True
 
 
 def solid_frame(value, size=8):
@@ -47,94 +39,63 @@ def solid_frame(value, size=8):
 
 
 def test_connect_reports_settings_and_video_availability():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(settings={"iso": 800}),
-        video_capture_factory=lambda index: FakeVideoCapture(frames=[solid_frame(100)]),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(settings={"iso": 800}, preview_frames=[solid_frame(100)]))
     assert session.connect() is True
     assert session.hardware_available is True
     assert session.video_available is True
 
 
 def test_connect_false_when_neither_available():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(connect_ok=False),
-        video_capture_factory=lambda index: FakeVideoCapture(opened=False),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(connect_ok=False))
     assert session.connect() is False
     assert session.hardware_available is False
     assert session.video_available is False
 
 
-def test_reconnect_releases_previous_video_handle():
-    """Regression guard for the 'Detect Camera' button: calling connect() again
-    while already connected must release the old video capture before opening a
-    new one, or repeated clicks would leak an open device handle."""
-    created = []
-
-    def factory(index):
-        cap = FakeVideoCapture(frames=[solid_frame(1)])
-        created.append(cap)
-        return cap
-
-    session = CameraSession(gphoto_camera=FakeGPhoto(), video_capture_factory=factory)
-    session.connect()
-    first_capture = created[0]
-    session.connect()
-    assert first_capture.released is True
-    assert session.video_available is True
+def test_video_unavailable_when_capture_preview_returns_none():
+    session = CameraSession(gphoto_camera=FakeGPhoto(preview_frames=[]))
+    assert session.connect() is True
+    assert session.video_available is False
 
 
 def test_video_never_probed_when_gphoto_unavailable():
-    """Regression guard: without a confirmed Nikon D3500 (gphoto2 connected), the
-    video device must never be probed at all, so a dev machine's own webcam is never
-    silently opened in place of the HDMI capture card."""
-    factory_calls = []
+    """Regression guard: without a confirmed Nikon D3500 (gphoto2 connected), a
+    preview frame must never be requested at all."""
+    calls = []
 
-    def spy_factory(index):
-        factory_calls.append(index)
-        return FakeVideoCapture(opened=True)
+    class SpyGPhoto(FakeGPhoto):
+        def capture_preview_frame(self):
+            calls.append(True)
+            return super().capture_preview_frame()
 
-    session = CameraSession(gphoto_camera=FakeGPhoto(connect_ok=False), video_capture_factory=spy_factory)
+    session = CameraSession(gphoto_camera=SpyGPhoto(connect_ok=False, preview_frames=[solid_frame(1)]))
     session.connect()
-    assert factory_calls == []
+    assert calls == []
     assert session.video_available is False
 
 
 def test_video_unavailable_does_not_block_settings_readback():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(settings={"iso": 400}, connect_ok=True),
-        video_capture_factory=lambda index: FakeVideoCapture(opened=False),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(settings={"iso": 400}, connect_ok=True, preview_frames=[]))
     session.connect()
     assert session.hardware_available is True
     assert session.read_current_value("iso") == 400
 
 
 def test_read_current_value_none_when_settings_unavailable():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(connect_ok=False),
-        video_capture_factory=lambda index: FakeVideoCapture(frames=[solid_frame(50)]),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(connect_ok=False))
     session.connect()
     assert session.read_current_value("iso") is None
 
 
 def test_read_current_value_missing_key_returns_none():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(settings={"iso": 400}),
-        video_capture_factory=lambda index: FakeVideoCapture(),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(settings={"iso": 400}))
     session.connect()
     assert session.read_current_value("wb") is None
 
 
 def test_capture_baseline_then_frame_trend_detects_brighter():
-    frames = [solid_frame(50), solid_frame(200)]
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(),
-        video_capture_factory=lambda index: FakeVideoCapture(frames=frames),
-    )
+    probe_frame = solid_frame(1)
+    session = CameraSession(gphoto_camera=FakeGPhoto(preview_frames=[probe_frame, solid_frame(50), solid_frame(200)]))
     session.connect()
     session.capture_baseline("iso")
     trend = session.frame_trend("iso")
@@ -142,20 +103,15 @@ def test_capture_baseline_then_frame_trend_detects_brighter():
 
 
 def test_frame_trend_none_without_baseline():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(),
-        video_capture_factory=lambda index: FakeVideoCapture(frames=[solid_frame(100)]),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(preview_frames=[solid_frame(1)]))
     session.connect()
     assert session.frame_trend("iso") is None
 
 
 def test_read_frame_returns_latest_frame():
+    probe_frame = solid_frame(1)
     frame = solid_frame(77)
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(),
-        video_capture_factory=lambda index: FakeVideoCapture(frames=[frame]),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(preview_frames=[probe_frame, frame]))
     session.connect()
     result = session.read_frame()
     assert result is not None
@@ -163,19 +119,14 @@ def test_read_frame_returns_latest_frame():
 
 
 def test_read_frame_none_without_video():
-    session = CameraSession(
-        gphoto_camera=FakeGPhoto(),
-        video_capture_factory=lambda index: FakeVideoCapture(opened=False),
-    )
+    session = CameraSession(gphoto_camera=FakeGPhoto(preview_frames=[]))
     session.connect()
     assert session.read_frame() is None
 
 
-def test_close_releases_video_and_gphoto():
-    fake_gphoto = FakeGPhoto()
-    fake_video = FakeVideoCapture(frames=[solid_frame(10)])
-    session = CameraSession(gphoto_camera=fake_gphoto, video_capture_factory=lambda index: fake_video)
+def test_close_releases_gphoto():
+    fake_gphoto = FakeGPhoto(preview_frames=[solid_frame(10)])
+    session = CameraSession(gphoto_camera=fake_gphoto)
     session.connect()
     session.close()
-    assert fake_video.released is True
     assert fake_gphoto.closed is True

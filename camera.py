@@ -1,6 +1,6 @@
 """Live camera preview widget.
 
-Displays real frames from the Nikon D3500's HDMI capture card (fed via
+Displays real frames from the Nikon D3500's USB live view (fed via
 `set_frame(QPixmap)` - see `CameraSession` below) or a placeholder when no
 camera is connected. There is no simulated exposure effect: the trainee turns
 the physical camera dial and the system detects the real result.
@@ -68,8 +68,9 @@ def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
 
 
 class CameraSession:
-    """Non-UI hardware controller: reads live exposure settings via gPhoto2 and
-    analyzes live frames via OpenCV, per the proposal's system flowchart (Ch. 3.6.3).
+    """Non-UI hardware controller: reads live exposure settings and live-view frames
+    via gPhoto2 over USB, then analyzes frames via OpenCV, per the proposal's system
+    flowchart (Ch. 3.6.3).
 
     `hardware_available` is False when no Nikon D3500 is connected (e.g. during
     development) - the app has no on-screen fallback for adjusting settings in that
@@ -77,11 +78,8 @@ class CameraSession:
     system detects the result.
     """
 
-    def __init__(self, gphoto_camera=None, video_capture_factory=None, video_index: int = 0):
+    def __init__(self, gphoto_camera=None):
         self._gphoto = gphoto_camera if gphoto_camera is not None else GPhotoCamera()
-        self._video_factory = video_capture_factory or cv2.VideoCapture
-        self._video_index = video_index
-        self._video_capture = None
 
         self.settings_available = False
         self.video_available = False
@@ -95,27 +93,18 @@ class CameraSession:
         return self.settings_available
 
     def connect(self) -> bool:
-        if self._video_capture is not None:
-            self._video_capture.release()  # release any previous handle before reconnecting
-
         self.settings_available = self._gphoto.connect()
         self.video_available = False
-        self._video_capture = None
 
-        # Only probe for a video feed once gPhoto2 confirms the Nikon D3500 itself is
-        # present. Without that, opening a capture device index would risk silently
-        # grabbing an unrelated local webcam on a dev machine instead of the HDMI
-        # capture card, which is only ever wired up alongside the real rig.
+        # Only probe for a live-view frame once gPhoto2 confirms the Nikon D3500
+        # itself is present, since capture_preview_frame() shares the same USB link.
         if not self.settings_available:
             return False
 
-        try:
-            capture = self._video_factory(self._video_index)
-            self.video_available = bool(capture.isOpened())
-            self._video_capture = capture if self.video_available else None
-        except Exception:
-            self.video_available = False
-            self._video_capture = None
+        frame = self._gphoto.capture_preview_frame()
+        self.video_available = frame is not None
+        if self.video_available:
+            self.latest_frame = frame
         return True
 
     def read_current_value(self, task_id: str):
@@ -126,10 +115,10 @@ class CameraSession:
         return self._gphoto.read_settings().get(task_id)
 
     def _grab_frame(self):
-        if not self.video_available or self._video_capture is None:
+        if not self.video_available:
             return None
-        ok, frame = self._video_capture.read()
-        if not ok or frame is None:
+        frame = self._gphoto.capture_preview_frame()
+        if frame is None:
             return None
         self.latest_frame = frame
         return frame
@@ -157,7 +146,4 @@ class CameraSession:
         return describe_trend(baseline, analyze_frame(frame))
 
     def close(self):
-        if self._video_capture is not None:
-            self._video_capture.release()
-            self._video_capture = None
         self._gphoto.close()
