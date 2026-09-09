@@ -8,14 +8,6 @@ CONFIG_NAMES = {"iso": "iso", "aperture": "f-number", "shutter": "shutterspeed",
 _TASK_OPTIONS = {t["id"]: t["options"] for t in TASKS}
 
 
-def is_available() -> bool:
-    try:
-        import gphoto2
-    except ImportError:
-        return False
-    return True
-
-
 def snap_to_options(value, options: list):
     if value in options:
         return value
@@ -121,9 +113,6 @@ class GPhotoCamera:
         except Exception:
             return None
         return frame
-
-    def is_connected(self) -> bool:
-        return self._camera is not None
 
     def close(self):
         if self._camera is not None:

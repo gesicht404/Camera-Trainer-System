@@ -10,7 +10,6 @@ from PySide6.QtWidgets import QLabel, QWidget
 from gphoto_camera import GPhotoCamera
 from vision import analyze_frame, describe_trend
 
-PLACEHOLDER_BG = QColor("#0f172a")
 PLACEHOLDER_FG = QColor("#e2e8f0")
 
 
