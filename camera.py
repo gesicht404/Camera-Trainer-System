@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -62,16 +63,21 @@ def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
     return QPixmap.fromImage(image.copy())
 
 
+PREVIEW_HOLD_SECONDS = 3.0
+
+
 class CameraSession:
-    def __init__(self, gphoto_camera=None, captures_dir="captures"):
+    def __init__(self, gphoto_camera=None, captures_dir="captures", clock=time.monotonic):
         self._gphoto = gphoto_camera if gphoto_camera is not None else GPhotoCamera()
         self._captures_dir = Path(captures_dir)
+        self._clock = clock
 
         self.settings_available = False
         self.video_available = False
         self.latest_frame = None
         self.last_exif_settings = {}
         self._baseline_metrics = {}
+        self._hold_until = 0.0
 
     @property
     def hardware_available(self) -> bool:
@@ -96,6 +102,8 @@ class CameraSession:
         return self._gphoto.read_settings().get(task_id)
 
     def _grab_frame(self):
+        if self._clock() < self._hold_until:
+            return self.latest_frame
         if not self.video_available:
             return None
         frame = self._gphoto.capture_preview_frame()
@@ -128,6 +136,7 @@ class CameraSession:
         (self._captures_dir / filename).write_bytes(jpeg_bytes)
         self.latest_frame = frame
         self.last_exif_settings = exif_settings
+        self._hold_until = self._clock() + PREVIEW_HOLD_SECONDS
         self._warn_on_settings_mismatch(task_id, exif_settings)
         return frame
 

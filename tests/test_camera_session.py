@@ -165,3 +165,52 @@ def test_poll_physical_capture_returns_none_when_hardware_unavailable(tmp_path):
     )
     session.connect()
     assert session.poll_physical_capture("iso") is None
+
+
+def test_read_frame_holds_captured_frame_instead_of_reverting_to_live_view(tmp_path):
+    clock_values = iter([0.0, 0.0, 1.0])
+
+    def fake_clock():
+        return next(clock_values)
+
+    captured = solid_frame(50)
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            preview_frames=[solid_frame(1), solid_frame(2)],
+            captures=[(captured, b"jpeg-bytes", {"iso": 800})],
+        ),
+        captures_dir=tmp_path,
+        clock=fake_clock,
+    )
+    session.connect()
+
+    session.capture_baseline("iso")
+    frame = session.read_frame()
+
+    assert np.array_equal(frame, captured)
+
+
+def test_read_frame_resumes_live_view_after_hold_expires(tmp_path):
+    clock_values = iter([0.0, 0.0, 10.0])
+
+    def fake_clock():
+        return next(clock_values)
+
+    live_frame = solid_frame(2)
+    session = CameraSession(
+        gphoto_camera=FakeGPhoto(
+            settings={"iso": 800},
+            preview_frames=[solid_frame(1), live_frame],
+            captures=[(solid_frame(50), b"jpeg-bytes", {"iso": 800})],
+        ),
+        captures_dir=tmp_path,
+        clock=fake_clock,
+    )
+    session.connect()
+
+    session.capture_baseline("iso")
+    session.read_frame()  # still within the hold window
+    frame = session.read_frame()  # hold has now expired
+
+    assert np.array_equal(frame, live_frame)
