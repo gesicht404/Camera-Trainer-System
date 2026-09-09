@@ -5,8 +5,6 @@ from tasks import TASKS
 
 
 class TaskInfoScreen(QWidget):
-    """SCREEN: TASK INFO - re-populated per task index 0-3."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller

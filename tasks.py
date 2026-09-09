@@ -1,11 +1,3 @@
-"""Task configuration and pure grading/feedback logic.
-
-Copy and thresholds originate from the approved Claude Design prototype
-("Camera Trainer Kiosk.dc.html") and are not to be changed without updating
-the design. Current values are read live from the physical camera (see
-gphoto_camera.py / camera.CameraSession) rather than simulated on-screen.
-"""
-
 TASKS = [
     {
         "id": "iso",

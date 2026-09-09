@@ -1,9 +1,3 @@
-# This Python file uses the following encoding: utf-8
-"""QApplication bootstrap for the Interactive Camera Trainer kiosk.
-
-Fixed 800x480, frameless, for a 7" HDMI touchscreen on Raspberry Pi 4.
-"""
-
 import sys
 from pathlib import Path
 
@@ -17,7 +11,6 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def load_fonts():
-    """Bundle Inter as an application font if present; else fall back to system sans-serif."""
     fonts_dir = BASE_DIR / "assets" / "fonts"
     if not fonts_dir.is_dir():
         return

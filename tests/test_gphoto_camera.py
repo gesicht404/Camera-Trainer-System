@@ -34,12 +34,6 @@ class FakeConfig:
 
 
 class FakeCamera:
-    """`config_values` starts as both the "true" on-camera values and the cached
-    values get_config() serves. simulate_dial_change() only updates the "true"
-    values, mirroring how a physical dial turn changes the camera's actual state
-    but not libgphoto2's cached PTP property widgets - wait_for_event() is what
-    pulls the cache back in sync, same as the real driver."""
-
     def __init__(self, config_values, preview_jpeg_bytes=None, capture_jpeg_bytes=None, fail_capture=False):
         self._cached_values = dict(config_values)
         self._true_values = dict(config_values)
@@ -85,8 +79,8 @@ class FakeCamera:
     def wait_for_event(self, timeout_ms):
         if self._cached_values != self._true_values:
             self._cached_values = dict(self._true_values)
-            return (1, None)  # GP_EVENT_UNKNOWN-ish: something changed
-        return (0, None)  # GP_EVENT_TIMEOUT: nothing pending
+            return (1, None)
+        return (0, None)
 
 
 class FakeCameraFilePath:
@@ -104,8 +98,6 @@ class FakeCameraFile:
 
 
 class FakeGPhoto2Module:
-    """Test double standing in for the real `gphoto2` package."""
-
     GP_EVENT_TIMEOUT = 0
     GP_CAPTURE_IMAGE = 0
     GP_FILE_TYPE_NORMAL = 0
@@ -170,9 +162,6 @@ def test_connect_failure_when_no_device():
 
 
 def test_reconnect_releases_previous_handle_first():
-    """Regression guard for the 'Detect Camera' button: calling connect() again
-    while already connected must exit() the old handle before claiming a new one,
-    or repeated clicks would double-claim the USB device."""
     fake_module = FakeGPhoto2Module({"iso": "400"})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
@@ -198,11 +187,6 @@ def test_read_settings_returns_empty_when_not_connected():
 
 
 def test_read_settings_reflects_dial_change_in_realtime():
-    """Regression guard: libgphoto2 caches PTP property values and only refreshes
-    them once pending events are drained via wait_for_event() (see
-    gphoto/libgphoto2#677). Turning the camera's physical dial changes the
-    camera's actual state, but read_settings() must drain events before reading
-    config or it will keep reporting the value from before the dial turn."""
     fake_module = FakeGPhoto2Module({"iso": "400"})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
@@ -213,7 +197,7 @@ def test_read_settings_reflects_dial_change_in_realtime():
 
 
 def test_read_settings_omits_unreadable_field():
-    fake_module = FakeGPhoto2Module({"iso": "400", "f-number": "8"})  # shutter/wb missing
+    fake_module = FakeGPhoto2Module({"iso": "400", "f-number": "8"})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
     settings = camera.read_settings()
@@ -229,14 +213,10 @@ def test_close_marks_disconnected():
 
 
 def test_is_available_false_without_native_library():
-    # On this dev machine libgphoto2 isn't installed, so the real import must fail
-    # gracefully rather than raising.
     assert is_available() is False
 
 
 def test_connect_enables_viewfinder_when_supported():
-    """USB live view must be turned on before capture_preview() will return
-    frames on many Nikon bodies (config widget 'viewfinder' -> 1)."""
     fake_module = FakeGPhoto2Module({"iso": "800", "viewfinder": 0})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
@@ -245,8 +225,6 @@ def test_connect_enables_viewfinder_when_supported():
 
 
 def test_connect_succeeds_when_viewfinder_unsupported():
-    """Regression guard: a body/firmware without a 'viewfinder' config widget must
-    not break connect() - the toggle is best-effort."""
     fake_module = FakeGPhoto2Module({"iso": "800"})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     assert camera.connect() is True
@@ -268,7 +246,7 @@ def test_capture_preview_frame_none_when_not_connected():
 
 
 def test_capture_preview_frame_none_when_liveview_unsupported():
-    fake_module = FakeGPhoto2Module({"iso": "800"})  # no preview_jpeg_bytes configured
+    fake_module = FakeGPhoto2Module({"iso": "800"})
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
     assert camera.capture_preview_frame() is None

@@ -9,14 +9,6 @@ from camera import CameraSession
 
 
 class FakeGPhoto:
-    """`preview_frames`, when given, is a queue popped by each capture_preview_frame()
-    call - mirrors a live USB feed where every call can return a different frame.
-    `None` (the default) means the camera never returns a preview frame at all.
-
-    `captures`, when given, is a queue popped by each capture_image() call, each
-    entry a (frame, jpeg_bytes) tuple - mirrors a real shutter-fire capture. `None`
-    (the default) means every capture_image() call fails (returns None)."""
-
     def __init__(self, settings=None, connect_ok=True, preview_frames=None, captures=None):
         self._settings = settings or {}
         self._connect_ok = connect_ok
@@ -69,8 +61,6 @@ def test_video_unavailable_when_capture_preview_returns_none():
 
 
 def test_video_never_probed_when_gphoto_unavailable():
-    """Regression guard: without a confirmed Nikon D3500 (gphoto2 connected), a
-    preview frame must never be requested at all."""
     calls = []
 
     class SpyGPhoto(FakeGPhoto):
@@ -128,8 +118,6 @@ def test_frame_trend_none_without_baseline(tmp_path):
 
 
 def test_capture_baseline_noop_when_capture_fails(tmp_path):
-    """A failed real capture (camera busy, USB hiccup) must not record a bogus
-    baseline - frame_trend() should then have nothing to compare against."""
     session = CameraSession(
         gphoto_camera=FakeGPhoto(preview_frames=[solid_frame(1)], captures=[]),
         captures_dir=tmp_path,

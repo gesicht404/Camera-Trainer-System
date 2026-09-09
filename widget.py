@@ -1,4 +1,3 @@
-# This Python file uses the following encoding: utf-8
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
@@ -27,17 +26,11 @@ SCREEN_INDEX = {
 
 
 class Widget(QWidget):
-    """Kiosk shell: owns app state, TASKS flow, and QStackedWidget navigation."""
-
     def __init__(self, parent=None, data_store: DataStore | None = None, camera_session: CameraSession | None = None):
         super().__init__(parent)
 
         self.data_store = data_store or DataStore()
 
-        # Real hardware integration (Ch. 3.6.3 of the proposal): gPhoto2 reads the
-        # Nikon D3500's live settings and live-view frames over USB, OpenCV analyzes
-        # the video feed. There is no on-screen simulation of these values - the
-        # trainee turns the physical camera dial and the system detects it.
         self.camera_session = camera_session or CameraSession()
         self.camera_session.connect()
 
@@ -91,9 +84,6 @@ class Widget(QWidget):
         super().closeEvent(event)
 
     def _poll_camera(self):
-        """Live hardware polling while on the Task Capture screen: feeds real
-        frames into the (unchanged) preview widget and keeps the on-screen
-        readout tracking the physical camera dial, per Ch. 3.6.3 of the proposal."""
         if self.state["screen"] != "taskCapture":
             return
 
@@ -116,8 +106,6 @@ class Widget(QWidget):
                 "correct": False,
             }
             self.render()
-
-    # -- navigation / state transitions (mirrors the approved design's Component logic) --
 
     def go_start(self):
         self.state.update(
@@ -154,8 +142,6 @@ class Widget(QWidget):
         self.render()
 
     def quit_app(self):
-        """Kiosk exit: main.py runs the window frameless (no OS close button), so
-        this is the only way to leave the app on the deployed touchscreen."""
         self.window().close()
 
     def back_to_start(self):
@@ -167,8 +153,6 @@ class Widget(QWidget):
         self.render()
 
     def go_back(self):
-        """Steps back one screen within the task flow without touching taskState -
-        every task's captured retries/values/checked status is preserved."""
         screen = self.state["screen"]
         if screen == "taskCapture":
             self.state["screen"] = "taskInfo"
@@ -188,10 +172,6 @@ class Widget(QWidget):
             self.camera_session.capture_baseline(task["id"])
             self.state["taskState"][idx] = {**cur, "baseline": True}
         else:
-            # Per Ch. 3.6.3: the system compares both the setting direction (checked
-            # against the target above) and the resulting image effect. The measured
-            # visual trend is recorded for internal fidelity even though correctness
-            # itself is still whether the live-detected setting hit the target.
             trend = self.camera_session.frame_trend(task["id"])
             correct = cur["value"] == task["target"]
             self.state["taskState"][idx] = {
@@ -256,8 +236,6 @@ class Widget(QWidget):
         self.state["gradeSource"] = "log"
         self.state["screen"] = "grade"
         self.render()
-
-    # -- rendering --
 
     def render(self):
         screen = self.state["screen"]

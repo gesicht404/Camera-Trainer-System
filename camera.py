@@ -1,11 +1,3 @@
-"""Live camera preview widget.
-
-Displays real frames from the Nikon D3500's USB live view (fed via
-`set_frame(QPixmap)` - see `CameraSession` below) or a placeholder when no
-camera is connected. There is no simulated exposure effect: the trainee turns
-the physical camera dial and the system detects the real result.
-"""
-
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +21,7 @@ class PreviewPanel(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("background:#0f172a; border-radius:8px;")
 
-        self._frame = None  # set via set_frame() once real hardware is attached
+        self._frame = None
 
         self.base = QLabel("Live viewfinder\npreview", self)
         self.base.setAlignment(Qt.AlignCenter)
@@ -50,7 +42,6 @@ class PreviewPanel(QWidget):
         self.live_chip.raise_()
 
     def set_frame(self, pixmap: QPixmap):
-        """Hook for real camera hardware: display a captured/live frame."""
         self._frame = pixmap
         self.base.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
 
@@ -63,7 +54,6 @@ class PreviewPanel(QWidget):
 
 
 def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
-    """Converts an OpenCV BGR frame into a QPixmap for PreviewPanel.set_frame()."""
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     height, width, channels = rgb.shape
     image = QImage(rgb.data, width, height, channels * width, QImage.Format_RGB888)
@@ -71,16 +61,6 @@ def frame_to_qpixmap(frame: np.ndarray) -> QPixmap:
 
 
 class CameraSession:
-    """Non-UI hardware controller: reads live exposure settings and live-view frames
-    via gPhoto2 over USB, then analyzes frames via OpenCV, per the proposal's system
-    flowchart (Ch. 3.6.3).
-
-    `hardware_available` is False when no Nikon D3500 is connected (e.g. during
-    development) - the app has no on-screen fallback for adjusting settings in that
-    case, since the trainee is expected to turn the physical camera dial and the
-    system detects the result.
-    """
-
     def __init__(self, gphoto_camera=None, captures_dir="captures"):
         self._gphoto = gphoto_camera if gphoto_camera is not None else GPhotoCamera()
         self._captures_dir = Path(captures_dir)
@@ -92,16 +72,12 @@ class CameraSession:
 
     @property
     def hardware_available(self) -> bool:
-        """Whether live camera settings can be read (the signal that drives
-        real-value-vs-simulated-stepper behavior in the controller layer)."""
         return self.settings_available
 
     def connect(self) -> bool:
         self.settings_available = self._gphoto.connect()
         self.video_available = False
 
-        # Only probe for a live-view frame once gPhoto2 confirms the Nikon D3500
-        # itself is present, since capture_preview_frame() shares the same USB link.
         if not self.settings_available:
             return False
 
@@ -112,8 +88,6 @@ class CameraSession:
         return True
 
     def read_current_value(self, task_id: str):
-        """Live camera-reported value for a task's setting, or None if no camera
-        is connected."""
         if not self.settings_available:
             return None
         return self._gphoto.read_settings().get(task_id)
@@ -128,14 +102,9 @@ class CameraSession:
         return frame
 
     def read_frame(self):
-        """Grabs the current live frame for preview display (no analysis), or None
-        if no video feed is available."""
         return self._grab_frame()
 
     def _capture_real_frame(self, task_id: str):
-        """Fires a real gPhoto2 capture (actual shutter release, not a live-view
-        frame) for grading/analysis, and saves the resulting JPEG to disk under
-        `captures_dir` for later review."""
         if not self.settings_available:
             return None
         result = self._gphoto.capture_image()
@@ -151,16 +120,11 @@ class CameraSession:
         return frame
 
     def capture_baseline(self, task_id: str):
-        """Stores the current frame's analyzed metrics as the comparison baseline
-        for this task (mirrors the flowchart's "capture a baseline image")."""
         frame = self._capture_real_frame(task_id)
         if frame is not None:
             self._baseline_metrics[task_id] = analyze_frame(frame)
 
     def frame_trend(self, task_id: str):
-        """Qualitative visual change (brighter/darker/sharper/blurrier/warmer/cooler)
-        of the current frame relative to this task's captured baseline, or None if a
-        frame or baseline isn't available yet."""
         frame = self._capture_real_frame(task_id)
         baseline = self._baseline_metrics.get(task_id)
         if frame is None or baseline is None:

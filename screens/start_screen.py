@@ -5,10 +5,6 @@ from tasks import TASKS
 
 
 class StartScreen(QWidget):
-    """SCREEN: START - kiosk title, subtitle, Start / Data Log buttons, a plain-text
-    Scenario link below them, a top-left icon button to exit the kiosk, and a
-    top-right icon button to detect the camera and its current settings."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
@@ -58,18 +54,12 @@ class StartScreen(QWidget):
         scenario_btn.clicked.connect(self.controller.open_scenario)
         root.addWidget(scenario_btn, alignment=Qt.AlignCenter)
 
-        # Top-left icon button: quit the kiosk. main.py runs the window frameless
-        # (no OS close button), so this is the app's only way out on the deployed
-        # touchscreen. Positioned via resizeEvent, same as detect_btn below.
         self.exit_btn = QPushButton("✕", self)
         self.exit_btn.setObjectName("iconButton")
         self.exit_btn.setCursor(Qt.PointingHandCursor)
         self.exit_btn.setToolTip("Exit")
         self.exit_btn.clicked.connect(self.controller.quit_app)
 
-        # Top-right icon button: detect the camera and show its live settings.
-        # Positioned via resizeEvent (not the centered root layout above) so it
-        # floats in the corner independent of the title/button block.
         self.detect_btn = QPushButton("📷", self)
         self.detect_btn.setObjectName("iconButton")
         self.detect_btn.setCursor(Qt.PointingHandCursor)

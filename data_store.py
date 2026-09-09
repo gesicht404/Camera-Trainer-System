@@ -1,10 +1,3 @@
-"""SQLite-backed persistence for completed training session records.
-
-The proposal (Ch. 3.9, "List of Equipment, Materials, and Software") specifies SQLite
-as the on-device database for storing student records, scores, feedback, and task
-results on the Raspberry Pi, without requiring internet connectivity.
-"""
-
 import json
 import sqlite3
 from pathlib import Path
@@ -51,8 +44,6 @@ CREATE TABLE IF NOT EXISTS students (
 
 
 class DataStore:
-    """Loads/persists student session records to a SQLite database next to the app."""
-
     def __init__(self, path: Path = DEFAULT_PATH):
         self.path = Path(path)
         is_new = not self.path.exists()

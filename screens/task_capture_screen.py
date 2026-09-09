@@ -15,10 +15,6 @@ MUTED_COLOR = "#94a3b8"
 
 
 class TaskCaptureScreen(QWidget):
-    """SCREEN: TASK CAPTURE - live preview + live-detected camera setting, re-populated
-    per task. The current value is read from the physical camera over gPhoto2 (no
-    on-screen +/- controls) - the trainee turns the actual camera dial."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller

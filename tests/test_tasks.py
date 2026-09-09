@@ -23,8 +23,8 @@ def test_compute_grade_thresholds():
 
 
 def test_seed_students_grades_match_thresholds():
-    assert compute_grade(5) == "A"  # Juan Dela Cruz
-    assert compute_grade(23) == "C"  # Maria Santos
+    assert compute_grade(5) == "A"
+    assert compute_grade(23) == "C"
 
 
 def test_fresh_task_state_matches_start_values():

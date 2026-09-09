@@ -1,40 +1,22 @@
-"""Thin wrapper around python-gphoto2 for reading Nikon D3500 exposure settings over USB.
-
-Per the proposal's system flowchart (Ch. 3.6.3): "gPhoto2 reads the current camera
-values through USB, such as ISO, shutter speed, aperture, and white balance when
-supported by the Nikon D3500."
-
-`python-gphoto2` depends on the native `libgphoto2` library, which is only available
-on Linux (i.e. the deployed Raspberry Pi OS target). `is_available()` reports whether
-it can be used on the current machine; callers should fall back to a simulated camera
-controller when it returns False (e.g. during development on a machine with no
-camera/capture card attached).
-"""
-
 import numpy as np
 import cv2
 
 from tasks import TASKS
 
-# gphoto2 config widget names for a Nikon D3500 body, keyed by our task ids.
 CONFIG_NAMES = {"iso": "iso", "aperture": "f-number", "shutter": "shutterspeed", "wb": "whitebalance"}
 
 _TASK_OPTIONS = {t["id"]: t["options"] for t in TASKS}
 
 
 def is_available() -> bool:
-    """Whether the native gphoto2 bindings can be imported on this machine."""
     try:
-        import gphoto2  # noqa: F401
+        import gphoto2
     except ImportError:
         return False
     return True
 
 
 def snap_to_options(value, options: list):
-    """Maps a raw camera-reported value onto the nearest matching entry in a task's
-    discrete `options` list (the camera's real dial may report values with more
-    precision or different formatting than the curriculum's fixed option set)."""
     if value in options:
         return value
     try:
@@ -80,16 +62,12 @@ _PARSERS = {"iso": _parse_iso, "aperture": _parse_aperture, "shutter": _parse_sh
 
 
 class GPhotoCamera:
-    """Talks to a Nikon D3500 (or gphoto2-compatible body) over USB."""
-
     def __init__(self, gphoto2_module=None):
-        """`gphoto2_module` can be injected (e.g. a test double); defaults to importing
-        the real `gphoto2` package lazily, only when `connect()` is called."""
         self._gp = gphoto2_module
         self._camera = None
 
     def connect(self) -> bool:
-        self.close()  # release any previous handle before reconnecting (e.g. re-detect)
+        self.close()
         if self._gp is None:
             try:
                 import gphoto2 as gp
@@ -107,9 +85,6 @@ class GPhotoCamera:
         return True
 
     def _enable_viewfinder(self):
-        """Best-effort: many Nikon bodies only feed capture_preview() once USB live
-        view is switched on via the 'viewfinder' config widget. Not every body/
-        firmware exposes it, so any failure here is silently ignored."""
         try:
             config = self._camera.get_config()
             widget = config.get_child_by_name("viewfinder")
@@ -119,14 +94,6 @@ class GPhotoCamera:
             pass
 
     def capture_image(self):
-        """Fires a real capture (shutter release, not a live-view frame), downloads
-        the resulting file over USB, and removes it from the camera's storage
-        afterward so repeated training sessions don't fill the SD card.
-
-        Returns (frame, jpeg_bytes) - `frame` decoded via OpenCV for analysis,
-        `jpeg_bytes` for saving to disk - or None if not connected or the capture
-        fails for any reason (unsupported, USB hiccup, etc.).
-        """
         if self._camera is None:
             return None
         try:
@@ -144,8 +111,6 @@ class GPhotoCamera:
         return frame, jpeg_bytes
 
     def capture_preview_frame(self):
-        """Grabs one live-view frame over USB via gphoto2's capture_preview(), or
-        None if not connected or the camera doesn't support/allow it right now."""
         if self._camera is None:
             return None
         try:
@@ -169,12 +134,6 @@ class GPhotoCamera:
             self._camera = None
 
     def _drain_events(self, timeout_ms: int = 20, max_events: int = 5):
-        """Processes pending PTP property-changed events before reading config.
-
-        libgphoto2 serves get_config() from a cached widget tree that's only
-        refreshed once the driver processes a device property-changed event
-        (see gphoto/libgphoto2#677) - without draining events first, settings
-        changed via the camera's physical dial keep reading as stale."""
         if self._gp is None or not hasattr(self._camera, "wait_for_event"):
             return
         for _ in range(max_events):
@@ -186,10 +145,6 @@ class GPhotoCamera:
                 return
 
     def read_settings(self) -> dict:
-        """Reads the camera's live config and returns values snapped onto each task's
-        discrete option set, e.g. {"iso": 800, "aperture": 5.6, "shutter": 60, "wb": "Auto"}.
-        Missing/unreadable fields are simply omitted from the result.
-        """
         if self._camera is None:
             return {}
         self._drain_events()

@@ -3,8 +3,6 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidg
 
 
 class NameEntryScreen(QWidget):
-    """SCREEN: NAME ENTRY."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller

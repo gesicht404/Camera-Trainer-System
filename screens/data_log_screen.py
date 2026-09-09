@@ -44,8 +44,6 @@ class StudentRow(QWidget):
 
 
 class DataLogScreen(QWidget):
-    """SCREEN: DATA LOG - list of students, tap a row to view their grade breakdown."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller

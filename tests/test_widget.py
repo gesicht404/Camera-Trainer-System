@@ -86,7 +86,6 @@ def test_go_back_never_touches_task_state(widget):
     widget.state["taskIdx"] = 1
     widget.open_capture()
 
-    # simulate progress on task 0 and task 1 that must survive navigation
     widget.state["taskState"][0]["retries"] = 3
     widget.state["taskState"][0]["checked"] = True
     widget.state["taskState"][0]["correct"] = True
@@ -94,7 +93,7 @@ def test_go_back_never_touches_task_state(widget):
     widget.state["taskState"][1]["baseline"] = True
     before = [dict(t) for t in widget.state["taskState"]]
 
-    widget.go_back()  # taskCapture(1) -> taskInfo(1)
-    widget.go_back()  # taskInfo(1) -> taskCapture(0)
+    widget.go_back()
+    widget.go_back()
 
     assert widget.state["taskState"] == before

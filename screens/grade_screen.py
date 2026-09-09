@@ -16,8 +16,6 @@ from tasks import GRADE_LABEL
 
 
 class GradeScreen(QWidget):
-    """SCREENS: GRADE BREAKDOWN - shared by a just-finished session and the data log."""
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
