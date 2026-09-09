@@ -86,6 +86,7 @@ class GPhotoCamera:
         self._camera = None
 
     def connect(self) -> bool:
+        self.close()  # release any previous handle before reconnecting (e.g. re-detect)
         if self._gp is None:
             try:
                 import gphoto2 as gp

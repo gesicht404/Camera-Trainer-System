@@ -29,7 +29,7 @@ def load_stylesheet() -> str:
     qss_path = BASE_DIR / "style.qss"
     return qss_path.read_text(encoding="utf-8") if qss_path.exists() else ""
 
-
+    
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     load_fonts()

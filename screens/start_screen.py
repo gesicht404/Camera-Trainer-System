@@ -1,9 +1,13 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from tasks import TASKS
+
 
 class StartScreen(QWidget):
-    """SCREEN: START - kiosk title, subtitle, Start / Data Log buttons."""
+    """SCREEN: START - kiosk title, subtitle, Start / Data Log buttons, a plain-text
+    Scenario link below them, and a top-right icon button to detect the camera and
+    its current settings."""
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -47,3 +51,51 @@ class StartScreen(QWidget):
         buttons.addWidget(data_log_btn)
 
         root.addLayout(buttons)
+
+        scenario_btn = QPushButton("Scenario")
+        scenario_btn.setObjectName("textButton")
+        scenario_btn.setCursor(Qt.PointingHandCursor)
+        scenario_btn.clicked.connect(self.controller.open_scenario)
+        root.addWidget(scenario_btn, alignment=Qt.AlignCenter)
+
+        # Top-right icon button: detect the camera and show its live settings.
+        # Positioned via resizeEvent (not the centered root layout above) so it
+        # floats in the corner independent of the title/button block.
+        self.detect_btn = QPushButton("📷", self)
+        self.detect_btn.setObjectName("iconButton")
+        self.detect_btn.setCursor(Qt.PointingHandCursor)
+        self.detect_btn.setToolTip("Detect camera")
+        self.detect_btn.clicked.connect(self._on_detect_clicked)
+
+        self.detect_status = QLabel("", self)
+        self.detect_status.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        self.detect_status.setWordWrap(True)
+        self.detect_status.setStyleSheet("font-size:11px; color:#64748b; background:transparent;")
+
+    def _on_detect_clicked(self):
+        session = self.controller.camera_session
+        session.connect()
+        if session.hardware_available:
+            parts = []
+            for task in TASKS:
+                value = session.read_current_value(task["id"])
+                if value is not None:
+                    parts.append(f"{task['label']}: {task['format'](value)}")
+            detail = ", ".join(parts) if parts else "no readable settings"
+            self.detect_status.setText(f"✓ Camera connected — {detail}")
+        else:
+            self.detect_status.setText("✕ No camera detected")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        margin = 16
+        self.detect_btn.move(self.width() - self.detect_btn.width() - margin, margin)
+        self.detect_btn.raise_()
+        status_width = 220
+        self.detect_status.setGeometry(
+            self.width() - status_width - margin,
+            margin + self.detect_btn.height() + 6,
+            status_width,
+            60,
+        )
+        self.detect_status.raise_()

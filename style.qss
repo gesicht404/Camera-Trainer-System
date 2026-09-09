@@ -44,6 +44,33 @@ QPushButton#outline:hover {
     background: #f1f5f9;
 }
 
+QPushButton#iconButton {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 18px;
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 44px;
+    max-height: 44px;
+}
+QPushButton#iconButton:hover {
+    background: #f1f5f9;
+}
+
+QPushButton#textButton {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 12px;
+    min-height: 44px;
+}
+QPushButton#textButton:hover {
+    color: #0f172a;
+}
+
 QLabel#detectedValue {
     background: #f1f5f9;
     border-radius: 6px;

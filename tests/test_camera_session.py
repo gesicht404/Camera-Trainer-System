@@ -66,6 +66,25 @@ def test_connect_false_when_neither_available():
     assert session.video_available is False
 
 
+def test_reconnect_releases_previous_video_handle():
+    """Regression guard for the 'Detect Camera' button: calling connect() again
+    while already connected must release the old video capture before opening a
+    new one, or repeated clicks would leak an open device handle."""
+    created = []
+
+    def factory(index):
+        cap = FakeVideoCapture(frames=[solid_frame(1)])
+        created.append(cap)
+        return cap
+
+    session = CameraSession(gphoto_camera=FakeGPhoto(), video_capture_factory=factory)
+    session.connect()
+    first_capture = created[0]
+    session.connect()
+    assert first_capture.released is True
+    assert session.video_available is True
+
+
 def test_video_never_probed_when_gphoto_unavailable():
     """Regression guard: without a confirmed Nikon D3500 (gphoto2 connected), the
     video device must never be probed at all, so a dev machine's own webcam is never

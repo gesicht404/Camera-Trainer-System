@@ -9,6 +9,7 @@ from data_store import DataStore
 from screens.data_log_screen import DataLogScreen
 from screens.grade_screen import GradeScreen
 from screens.name_entry_screen import NameEntryScreen
+from screens.scenario_screen import ScenarioScreen
 from screens.start_screen import StartScreen
 from screens.task_capture_screen import TaskCaptureScreen
 from screens.task_info_screen import TaskInfoScreen
@@ -23,6 +24,7 @@ SCREEN_INDEX = {
     "nameEntry": 3,
     "grade": 4,
     "dataLog": 5,
+    "scenario": 6,
 }
 
 
@@ -69,6 +71,7 @@ class Widget(QWidget):
         self.name_entry_screen = NameEntryScreen(self)
         self.grade_screen = GradeScreen(self)
         self.data_log_screen = DataLogScreen(self)
+        self.scenario_screen = ScenarioScreen(self)
 
         for screen in (
             self.start_screen,
@@ -77,6 +80,7 @@ class Widget(QWidget):
             self.name_entry_screen,
             self.grade_screen,
             self.data_log_screen,
+            self.scenario_screen,
         ):
             self.stacked.addWidget(screen)
 
@@ -151,12 +155,30 @@ class Widget(QWidget):
         self.state["screen"] = "dataLog"
         self.render()
 
+    def open_scenario(self):
+        self.state["screen"] = "scenario"
+        self.render()
+
     def back_to_start(self):
         self.state["screen"] = "start"
         self.render()
 
     def open_capture(self):
         self.state["screen"] = "taskCapture"
+        self.render()
+
+    def go_back(self):
+        """Steps back one screen within the task flow without touching taskState -
+        every task's captured retries/values/checked status is preserved."""
+        screen = self.state["screen"]
+        if screen == "taskCapture":
+            self.state["screen"] = "taskInfo"
+        elif screen == "taskInfo":
+            if self.state["taskIdx"] > 0:
+                self.state["taskIdx"] -= 1
+                self.state["screen"] = "taskCapture"
+            else:
+                self.state["screen"] = "start"
         self.render()
 
     def capture_or_check(self):

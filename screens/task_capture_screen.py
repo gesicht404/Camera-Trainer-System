@@ -67,6 +67,12 @@ class TaskCaptureScreen(QWidget):
         controls.addLayout(detected_box)
 
         check_row = QHBoxLayout()
+        back_btn = QPushButton("Back")
+        back_btn.setObjectName("outline")
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.clicked.connect(self.controller.go_back)
+        check_row.addWidget(back_btn)
+
         self.check_btn = QPushButton()
         self.check_btn.setObjectName("primary")
         self.check_btn.setCursor(Qt.PointingHandCursor)

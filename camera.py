@@ -95,6 +95,9 @@ class CameraSession:
         return self.settings_available
 
     def connect(self) -> bool:
+        if self._video_capture is not None:
+            self._video_capture.release()  # release any previous handle before reconnecting
+
         self.settings_available = self._gphoto.connect()
         self.video_available = False
         self._video_capture = None

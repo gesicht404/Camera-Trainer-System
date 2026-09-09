@@ -36,6 +36,11 @@ class TaskInfoScreen(QWidget):
         center.addStretch(1)
 
         footer = QHBoxLayout()
+        back_btn = QPushButton("Back")
+        back_btn.setObjectName("outline")
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.clicked.connect(self.controller.go_back)
+        footer.addWidget(back_btn)
         footer.addStretch(1)
         next_btn = QPushButton("Next")
         next_btn.setObjectName("primary")

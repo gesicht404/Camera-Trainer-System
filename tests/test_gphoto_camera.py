@@ -80,6 +80,19 @@ def test_connect_failure_when_no_device():
     assert camera.is_connected() is False
 
 
+def test_reconnect_releases_previous_handle_first():
+    """Regression guard for the 'Detect Camera' button: calling connect() again
+    while already connected must exit() the old handle before claiming a new one,
+    or repeated clicks would double-claim the USB device."""
+    fake_module = FakeGPhoto2Module({"iso": "400"})
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+    first_camera = camera._camera
+    camera.connect()
+    assert first_camera.exited is True
+    assert camera.is_connected() is True
+
+
 def test_read_settings_parses_and_snaps_all_fields():
     fake_module = FakeGPhoto2Module(
         {"iso": "790", "f-number": "f/5.6", "shutterspeed": "1/58", "whitebalance": "Fluorescent"}
