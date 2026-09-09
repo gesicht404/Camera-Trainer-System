@@ -1,11 +1,19 @@
+import io
+
 import numpy as np
 import cv2
+from PIL import Image
 
 from tasks import TASKS
 
 CONFIG_NAMES = {"iso": "iso", "aperture": "f-number", "shutter": "shutterspeed", "wb": "whitebalance"}
 
 _TASK_OPTIONS = {t["id"]: t["options"] for t in TASKS}
+
+_EXIF_IFD_TAG = 0x8769
+_EXIF_ISO_TAG = 0x8827
+_EXIF_FNUMBER_TAG = 0x829D
+_EXIF_EXPOSURE_TIME_TAG = 0x829A
 
 
 def snap_to_options(value, options: list):
@@ -51,6 +59,33 @@ def _parse_wb(raw: str):
 
 
 _PARSERS = {"iso": _parse_iso, "aperture": _parse_aperture, "shutter": _parse_shutter, "wb": _parse_wb}
+
+
+def _extract_exif_settings(jpeg_bytes: bytes) -> dict:
+    try:
+        exif_ifd = Image.open(io.BytesIO(jpeg_bytes)).getexif().get_ifd(_EXIF_IFD_TAG)
+    except Exception:
+        return {}
+
+    result = {}
+    if _EXIF_ISO_TAG in exif_ifd:
+        try:
+            result["iso"] = snap_to_options(int(exif_ifd[_EXIF_ISO_TAG]), _TASK_OPTIONS["iso"])
+        except (TypeError, ValueError):
+            pass
+    if _EXIF_FNUMBER_TAG in exif_ifd:
+        try:
+            result["aperture"] = snap_to_options(float(exif_ifd[_EXIF_FNUMBER_TAG]), _TASK_OPTIONS["aperture"])
+        except (TypeError, ValueError):
+            pass
+    if _EXIF_EXPOSURE_TIME_TAG in exif_ifd:
+        try:
+            exposure_time = float(exif_ifd[_EXIF_EXPOSURE_TIME_TAG])
+            shutter_denominator = int(round(1 / exposure_time))
+            result["shutter"] = snap_to_options(shutter_denominator, _TASK_OPTIONS["shutter"])
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return result
 
 
 class GPhotoCamera:
@@ -100,7 +135,7 @@ class GPhotoCamera:
             self._camera.file_delete(file_path.folder, file_path.name)
         except Exception:
             pass
-        return frame, jpeg_bytes
+        return frame, jpeg_bytes, _extract_exif_settings(jpeg_bytes)
 
     def capture_preview_frame(self):
         if self._camera is None:

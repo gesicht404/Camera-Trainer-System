@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from PySide6.QtWidgets import QLabel, QWidget
 
 from gphoto_camera import GPhotoCamera
 from vision import analyze_frame, describe_trend
+
+logger = logging.getLogger(__name__)
 
 PLACEHOLDER_FG = QColor("#e2e8f0")
 
@@ -67,6 +70,7 @@ class CameraSession:
         self.settings_available = False
         self.video_available = False
         self.latest_frame = None
+        self.last_exif_settings = {}
         self._baseline_metrics = {}
 
     @property
@@ -109,14 +113,27 @@ class CameraSession:
         result = self._gphoto.capture_image()
         if result is None:
             return None
-        frame, jpeg_bytes = result
+        frame, jpeg_bytes, exif_settings = result
         if frame is None:
             return None
         self._captures_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{task_id}_{datetime.now():%Y%m%d_%H%M%S}.jpg"
         (self._captures_dir / filename).write_bytes(jpeg_bytes)
         self.latest_frame = frame
+        self.last_exif_settings = exif_settings
+        self._warn_on_settings_mismatch(task_id, exif_settings)
         return frame
+
+    def _warn_on_settings_mismatch(self, task_id: str, exif_settings: dict):
+        exif_value = exif_settings.get(task_id)
+        live_value = self._gphoto.read_settings().get(task_id)
+        if exif_value is not None and live_value is not None and exif_value != live_value:
+            logger.warning(
+                "Captured-image EXIF disagrees with live camera config for %s: config=%s exif=%s",
+                task_id,
+                live_value,
+                exif_value,
+            )
 
     def capture_baseline(self, task_id: str):
         frame = self._capture_real_frame(task_id)
