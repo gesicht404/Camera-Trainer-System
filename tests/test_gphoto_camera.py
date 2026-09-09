@@ -25,8 +25,15 @@ class FakeConfig:
 
 
 class FakeCamera:
+    """`config_values` starts as both the "true" on-camera values and the cached
+    values get_config() serves. simulate_dial_change() only updates the "true"
+    values, mirroring how a physical dial turn changes the camera's actual state
+    but not libgphoto2's cached PTP property widgets - wait_for_event() is what
+    pulls the cache back in sync, same as the real driver."""
+
     def __init__(self, config_values):
-        self._config_values = config_values
+        self._cached_values = dict(config_values)
+        self._true_values = dict(config_values)
         self.inited = False
         self.exited = False
 
@@ -37,11 +44,22 @@ class FakeCamera:
         self.exited = True
 
     def get_config(self):
-        return FakeConfig(self._config_values)
+        return FakeConfig(self._cached_values)
+
+    def simulate_dial_change(self, new_values: dict):
+        self._true_values.update(new_values)
+
+    def wait_for_event(self, timeout_ms):
+        if self._cached_values != self._true_values:
+            self._cached_values = dict(self._true_values)
+            return (1, None)  # GP_EVENT_UNKNOWN-ish: something changed
+        return (0, None)  # GP_EVENT_TIMEOUT: nothing pending
 
 
 class FakeGPhoto2Module:
     """Test double standing in for the real `gphoto2` package."""
+
+    GP_EVENT_TIMEOUT = 0
 
     def __init__(self, config_values, fail_init=False):
         self._config_values = config_values
@@ -106,6 +124,21 @@ def test_read_settings_parses_and_snaps_all_fields():
 def test_read_settings_returns_empty_when_not_connected():
     camera = GPhotoCamera(gphoto2_module=FakeGPhoto2Module({}))
     assert camera.read_settings() == {}
+
+
+def test_read_settings_reflects_dial_change_in_realtime():
+    """Regression guard: libgphoto2 caches PTP property values and only refreshes
+    them once pending events are drained via wait_for_event() (see
+    gphoto/libgphoto2#677). Turning the camera's physical dial changes the
+    camera's actual state, but read_settings() must drain events before reading
+    config or it will keep reporting the value from before the dial turn."""
+    fake_module = FakeGPhoto2Module({"iso": "400"})
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+    assert camera.read_settings()["iso"] == 400
+
+    camera._camera.simulate_dial_change({"iso": "800"})
+    assert camera.read_settings()["iso"] == 800
 
 
 def test_read_settings_omits_unreadable_field():

@@ -113,6 +113,23 @@ class GPhotoCamera:
                 pass
             self._camera = None
 
+    def _drain_events(self, timeout_ms: int = 20, max_events: int = 5):
+        """Processes pending PTP property-changed events before reading config.
+
+        libgphoto2 serves get_config() from a cached widget tree that's only
+        refreshed once the driver processes a device property-changed event
+        (see gphoto/libgphoto2#677) - without draining events first, settings
+        changed via the camera's physical dial keep reading as stale."""
+        if self._gp is None or not hasattr(self._camera, "wait_for_event"):
+            return
+        for _ in range(max_events):
+            try:
+                event_type, _ = self._camera.wait_for_event(timeout_ms)
+            except Exception:
+                return
+            if event_type == self._gp.GP_EVENT_TIMEOUT:
+                return
+
     def read_settings(self) -> dict:
         """Reads the camera's live config and returns values snapped onto each task's
         discrete option set, e.g. {"iso": 800, "aperture": 5.6, "shutter": 60, "wb": "Auto"}.
@@ -120,6 +137,7 @@ class GPhotoCamera:
         """
         if self._camera is None:
             return {}
+        self._drain_events()
         config = self._camera.get_config()
         result = {}
         for task_id, widget_name in CONFIG_NAMES.items():
