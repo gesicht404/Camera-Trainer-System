@@ -1,3 +1,2 @@
 PySide6
-opencv-python-headless
-numpy
+-r requirements-common.txt
