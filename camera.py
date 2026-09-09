@@ -6,6 +6,9 @@ camera is connected. There is no simulated exposure effect: the trainee turns
 the physical camera dial and the system detects the real result.
 """
 
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
 import cv2
 from PySide6.QtCore import Qt
@@ -78,8 +81,9 @@ class CameraSession:
     system detects the result.
     """
 
-    def __init__(self, gphoto_camera=None):
+    def __init__(self, gphoto_camera=None, captures_dir="captures"):
         self._gphoto = gphoto_camera if gphoto_camera is not None else GPhotoCamera()
+        self._captures_dir = Path(captures_dir)
 
         self.settings_available = False
         self.video_available = False
@@ -128,10 +132,28 @@ class CameraSession:
         if no video feed is available."""
         return self._grab_frame()
 
+    def _capture_real_frame(self, task_id: str):
+        """Fires a real gPhoto2 capture (actual shutter release, not a live-view
+        frame) for grading/analysis, and saves the resulting JPEG to disk under
+        `captures_dir` for later review."""
+        if not self.settings_available:
+            return None
+        result = self._gphoto.capture_image()
+        if result is None:
+            return None
+        frame, jpeg_bytes = result
+        if frame is None:
+            return None
+        self._captures_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{task_id}_{datetime.now():%Y%m%d_%H%M%S}.jpg"
+        (self._captures_dir / filename).write_bytes(jpeg_bytes)
+        self.latest_frame = frame
+        return frame
+
     def capture_baseline(self, task_id: str):
         """Stores the current frame's analyzed metrics as the comparison baseline
         for this task (mirrors the flowchart's "capture a baseline image")."""
-        frame = self._grab_frame()
+        frame = self._capture_real_frame(task_id)
         if frame is not None:
             self._baseline_metrics[task_id] = analyze_frame(frame)
 
@@ -139,7 +161,7 @@ class CameraSession:
         """Qualitative visual change (brighter/darker/sharper/blurrier/warmer/cooler)
         of the current frame relative to this task's captured baseline, or None if a
         frame or baseline isn't available yet."""
-        frame = self._grab_frame()
+        frame = self._capture_real_frame(task_id)
         baseline = self._baseline_metrics.get(task_id)
         if frame is None or baseline is None:
             return None

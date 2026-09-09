@@ -40,13 +40,16 @@ class FakeCamera:
     but not libgphoto2's cached PTP property widgets - wait_for_event() is what
     pulls the cache back in sync, same as the real driver."""
 
-    def __init__(self, config_values, preview_jpeg_bytes=None):
+    def __init__(self, config_values, preview_jpeg_bytes=None, capture_jpeg_bytes=None, fail_capture=False):
         self._cached_values = dict(config_values)
         self._true_values = dict(config_values)
         self._preview_jpeg_bytes = preview_jpeg_bytes
+        self._capture_jpeg_bytes = capture_jpeg_bytes
+        self._fail_capture = fail_capture
         self.inited = False
         self.exited = False
         self.set_config_calls = 0
+        self.deleted_paths = []
 
     def init(self):
         self.inited = True
@@ -65,6 +68,17 @@ class FakeCamera:
             raise RuntimeError("liveview not supported")
         return FakeCameraFile(self._preview_jpeg_bytes)
 
+    def capture(self, capture_type):
+        if self._fail_capture:
+            raise RuntimeError("capture failed")
+        return FakeCameraFilePath("/store_00010001", "capt0001.jpg")
+
+    def file_get(self, folder, name, file_type):
+        return FakeCameraFile(self._capture_jpeg_bytes)
+
+    def file_delete(self, folder, name):
+        self.deleted_paths.append((folder, name))
+
     def simulate_dial_change(self, new_values: dict):
         self._true_values.update(new_values)
 
@@ -73,6 +87,12 @@ class FakeCamera:
             self._cached_values = dict(self._true_values)
             return (1, None)  # GP_EVENT_UNKNOWN-ish: something changed
         return (0, None)  # GP_EVENT_TIMEOUT: nothing pending
+
+
+class FakeCameraFilePath:
+    def __init__(self, folder, name):
+        self.folder = folder
+        self.name = name
 
 
 class FakeCameraFile:
@@ -87,11 +107,22 @@ class FakeGPhoto2Module:
     """Test double standing in for the real `gphoto2` package."""
 
     GP_EVENT_TIMEOUT = 0
+    GP_CAPTURE_IMAGE = 0
+    GP_FILE_TYPE_NORMAL = 0
 
-    def __init__(self, config_values, fail_init=False, preview_jpeg_bytes=None):
+    def __init__(
+        self,
+        config_values,
+        fail_init=False,
+        preview_jpeg_bytes=None,
+        capture_jpeg_bytes=None,
+        fail_capture=False,
+    ):
         self._config_values = config_values
         self._fail_init = fail_init
         self._preview_jpeg_bytes = preview_jpeg_bytes
+        self._capture_jpeg_bytes = capture_jpeg_bytes
+        self._fail_capture = fail_capture
 
     def Camera(self):
         if self._fail_init:
@@ -100,7 +131,12 @@ class FakeGPhoto2Module:
                     raise RuntimeError("no camera detected")
 
             return BadCamera()
-        return FakeCamera(self._config_values, preview_jpeg_bytes=self._preview_jpeg_bytes)
+        return FakeCamera(
+            self._config_values,
+            preview_jpeg_bytes=self._preview_jpeg_bytes,
+            capture_jpeg_bytes=self._capture_jpeg_bytes,
+            fail_capture=self._fail_capture,
+        )
 
 
 def _encode_test_jpeg():
@@ -236,3 +272,35 @@ def test_capture_preview_frame_none_when_liveview_unsupported():
     camera = GPhotoCamera(gphoto2_module=fake_module)
     camera.connect()
     assert camera.capture_preview_frame() is None
+
+
+def test_capture_image_returns_decoded_frame_and_bytes():
+    jpeg_bytes = _encode_test_jpeg()
+    fake_module = FakeGPhoto2Module({"iso": "800"}, capture_jpeg_bytes=jpeg_bytes)
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+    frame, raw_bytes = camera.capture_image()
+    assert frame is not None
+    assert frame.shape == (4, 4, 3)
+    assert raw_bytes == jpeg_bytes
+
+
+def test_capture_image_deletes_file_from_camera_after_download():
+    jpeg_bytes = _encode_test_jpeg()
+    fake_module = FakeGPhoto2Module({"iso": "800"}, capture_jpeg_bytes=jpeg_bytes)
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+    camera.capture_image()
+    assert camera._camera.deleted_paths == [("/store_00010001", "capt0001.jpg")]
+
+
+def test_capture_image_none_when_not_connected():
+    camera = GPhotoCamera(gphoto2_module=FakeGPhoto2Module({}))
+    assert camera.capture_image() is None
+
+
+def test_capture_image_none_on_capture_failure():
+    fake_module = FakeGPhoto2Module({"iso": "800"}, fail_capture=True)
+    camera = GPhotoCamera(gphoto2_module=fake_module)
+    camera.connect()
+    assert camera.capture_image() is None

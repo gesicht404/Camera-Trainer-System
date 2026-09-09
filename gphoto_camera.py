@@ -118,6 +118,31 @@ class GPhotoCamera:
         except Exception:
             pass
 
+    def capture_image(self):
+        """Fires a real capture (shutter release, not a live-view frame), downloads
+        the resulting file over USB, and removes it from the camera's storage
+        afterward so repeated training sessions don't fill the SD card.
+
+        Returns (frame, jpeg_bytes) - `frame` decoded via OpenCV for analysis,
+        `jpeg_bytes` for saving to disk - or None if not connected or the capture
+        fails for any reason (unsupported, USB hiccup, etc.).
+        """
+        if self._camera is None:
+            return None
+        try:
+            file_path = self._camera.capture(self._gp.GP_CAPTURE_IMAGE)
+            camera_file = self._camera.file_get(file_path.folder, file_path.name, self._gp.GP_FILE_TYPE_NORMAL)
+            jpeg_bytes = bytes(camera_file.get_data_and_size())
+            buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        except Exception:
+            return None
+        try:
+            self._camera.file_delete(file_path.folder, file_path.name)
+        except Exception:
+            pass
+        return frame, jpeg_bytes
+
     def capture_preview_frame(self):
         """Grabs one live-view frame over USB via gphoto2's capture_preview(), or
         None if not connected or the camera doesn't support/allow it right now."""
