@@ -153,6 +153,11 @@ class Widget(QWidget):
         self.state["screen"] = "scenario"
         self.render()
 
+    def quit_app(self):
+        """Kiosk exit: main.py runs the window frameless (no OS close button), so
+        this is the only way to leave the app on the deployed touchscreen."""
+        self.window().close()
+
     def back_to_start(self):
         self.state["screen"] = "start"
         self.render()
