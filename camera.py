@@ -110,7 +110,14 @@ class CameraSession:
     def _capture_real_frame(self, task_id: str):
         if not self.settings_available:
             return None
-        result = self._gphoto.capture_image()
+        return self._store_capture(task_id, self._gphoto.capture_image())
+
+    def poll_physical_capture(self, task_id: str):
+        if not self.settings_available:
+            return None
+        return self._store_capture(task_id, self._gphoto.poll_physical_capture())
+
+    def _store_capture(self, task_id: str, result):
         if result is None:
             return None
         frame, jpeg_bytes, exif_settings = result

@@ -125,6 +125,12 @@ class GPhotoCamera:
             return None
         try:
             file_path = self._camera.capture(self._gp.GP_CAPTURE_IMAGE)
+        except Exception:
+            return None
+        return self._download_and_delete(file_path)
+
+    def _download_and_delete(self, file_path):
+        try:
             camera_file = self._camera.file_get(file_path.folder, file_path.name, self._gp.GP_FILE_TYPE_NORMAL)
             jpeg_bytes = bytes(camera_file.get_data_and_size())
             buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
@@ -136,6 +142,21 @@ class GPhotoCamera:
         except Exception:
             pass
         return frame, jpeg_bytes, _extract_exif_settings(jpeg_bytes)
+
+    def poll_physical_capture(self, timeout_ms: int = 20, max_events: int = 5):
+        """Check for a photo taken with the camera's own shutter button."""
+        if self._camera is None or self._gp is None or not hasattr(self._camera, "wait_for_event"):
+            return None
+        for _ in range(max_events):
+            try:
+                event_type, event_data = self._camera.wait_for_event(timeout_ms)
+            except Exception:
+                return None
+            if event_type == self._gp.GP_EVENT_TIMEOUT:
+                return None
+            if event_type == self._gp.GP_EVENT_FILE_ADDED:
+                return self._download_and_delete(event_data)
+        return None
 
     def capture_preview_frame(self):
         if self._camera is None:

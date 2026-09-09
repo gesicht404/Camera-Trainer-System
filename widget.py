@@ -87,15 +87,20 @@ class Widget(QWidget):
         if self.state["screen"] != "taskCapture":
             return
 
-        frame = self.camera_session.read_frame()
+        idx = self.state["taskIdx"]
+        task = TASKS[idx]
+
+        physical_frame = None
+        if self.camera_session.hardware_available:
+            physical_frame = self.camera_session.poll_physical_capture(task["id"])
+
+        frame = physical_frame if physical_frame is not None else self.camera_session.read_frame()
         if frame is not None:
             self.task_capture_screen.preview.set_frame(frame_to_qpixmap(frame))
 
         if not self.camera_session.hardware_available:
             return
 
-        idx = self.state["taskIdx"]
-        task = TASKS[idx]
         live_value = self.camera_session.read_current_value(task["id"])
         cur = self.state["taskState"][idx]
         if live_value is not None and live_value != cur["value"]:
